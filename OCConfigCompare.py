@@ -95,7 +95,7 @@ class OCCC:
             with open(dl_config,"rb") as f:
                 p = plist.load(f)
         except Exception as e:
-            print("\nPlist failed to load:  {}\n".format(e),timeout=5)
+            print("\nPlist failed to load:  {}\n".format(e))
             if wait: self.u.grab("Press [enter] to return...")
             return None
         print("")
@@ -126,7 +126,7 @@ class OCCC:
             except Exception as e:
                 self.u.head()
                 print("")
-                print("Plist failed to load:  {}".format(e),timeout=5)
+                self.u.grab("Plist failed to load:  {}".format(e),timeout=5)
                 continue
             return (pl,p) # Return the path and plist contents
 
