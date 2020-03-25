@@ -22,16 +22,18 @@ class OCCC:
 
     def compare(self):
         # First make sure we have plist info
-        if self.current_plist is None:
-            p = self.get_plist("user config.plist")
-            if p is None:
-                return
-            self.current_config,self.current_plist = p
-        if self.sample_plist is None:
-            p = self.get_latest(False)
-            if p is None:
-                return
-            self.sample_config,self.sample_plist = p
+        c = self.get_plist("user config.plist",self.current_config)
+        if c is None:
+            return
+        self.current_config,self.current_plist = c
+        # Get the latest if we don't have one - or use the one we have
+        if self.sample_config is None:
+            s = self.get_latest(False)
+        else:
+            s = self.get_plist("OC Sample.plist",self.sample_config)
+        if s is None:
+            return
+        self.sample_config,self.sample_plist = s
         self.u.head()
         print("")
         print("Checking for values missing from User plist:")
@@ -102,18 +104,22 @@ class OCCC:
         if wait: self.u.grab("Press [enter] to return...")
         return (dl_config,p)
 
-    def get_plist(self,plist_name="config.plist"):
+    def get_plist(self,plist_name="config.plist",plist_path=None):
         while True:
-            self.u.head()
-            print("")
-            print("M. Return to Menu")
-            print("Q. Quit")
-            print("")
-            m = self.u.grab("Please drag and drop the {} file:  ".format(plist_name))
-            if m.lower() == "m":
-                return None
-            elif m.lower() == "q":
-                self.u.custom_quit()
+            if plist_path != None:
+                m = plist_path
+            else:
+                self.u.head()
+                print("")
+                print("M. Return to Menu")
+                print("Q. Quit")
+                print("")
+                m = self.u.grab("Please drag and drop the {} file:  ".format(plist_name))
+                if m.lower() == "m":
+                    return None
+                elif m.lower() == "q":
+                    self.u.custom_quit()
+            plist_path = None # Reset
             pl = self.u.check_path(m)
             if not pl:
                 self.u.head()
@@ -126,7 +132,7 @@ class OCCC:
             except Exception as e:
                 self.u.head()
                 print("")
-                self.u.grab("Plist failed to load:  {}".format(e),timeout=5)
+                self.u.grab("Plist ({}) failed to load:  {}".format(os.path.basename(pl),e),timeout=5)
                 continue
             return (pl,p) # Return the path and plist contents
 
