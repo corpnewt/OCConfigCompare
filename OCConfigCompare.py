@@ -1,5 +1,5 @@
 from Scripts import *
-import os, plistlib
+import os, plistlib, json
 
 class OCCC:
     def __init__(self):
@@ -12,6 +12,11 @@ class OCCC:
         self.sample_plist   = None
         self.sample_url     = "https://github.com/acidanthera/OpenCorePkg/raw/master/Docs/Sample.plist"
         self.sample_path    = os.path.join(os.path.dirname(os.path.realpath(__file__)),os.path.basename(self.sample_url))
+        self.settings_file  = os.path.join(os.path.dirname(os.path.realpath(__file__)),"Scripts","settings.json")
+        self.settings       = {} # Smol settings dict - { "hide_with_prefix" : "#" }
+        if os.path.exists(self.settings_file):
+            try: self.settings = json.load(open(self.settings_file))
+            except: pass
         self.sample_config  = self.sample_path if os.path.exists(self.sample_path) else None
         if self.sample_config:
             try:
@@ -63,12 +68,15 @@ class OCCC:
         if isinstance(compare_from,self.dict_types):
             # Let's compare keys
             not_keys = [x for x in list(compare_from) if not x in list(compare_to)]
+            if self.settings.get("hide_with_prefix","#") != None:
+                not_keys = [x for x in not_keys if not x.startswith(self.settings.get("hide_with_prefix","#"))]
             if not_keys:
                 for x in not_keys:
                     change_list.append("{} - Missing Key: {}".format(path,x))
             # Let's verify all other values if needed
             for x in list(compare_from):
                 if x in not_keys: continue # Skip these as they're already not in the _to
+                if self.settings.get("hide_with_prefix","#") != None and x.startswith(self.settings.get("hide_with_prefix","#")): continue # Skipping this due to prefix
                 val = compare_from[x]
                 if isinstance(val,list) or isinstance(val,self.dict_types):
                     change_list.extend(self.compare_value(val,compare_to[x],path+" -> "+x))
@@ -136,16 +144,56 @@ class OCCC:
                 continue
             return (pl,p) # Return the path and plist contents
 
+    def custom_hide_prefix(self):
+        self.u.head()
+        print("")
+        print("Hide Keys Prefix: {}".format(self.settings.get("hide_with_prefix","#")))
+        print("")
+        pref = self.u.grab("Please enter the custom hide key prefix:  ")
+        return pref if len(pref) else None
+
+    def hide_key_prefix(self):
+        self.u.head()
+        print("")
+        print("Hide Keys Prefix: {}".format(self.settings.get("hide_with_prefix","#")))
+        print("")
+        print("1. Hide Keys Starting With #")
+        print("2. Input Custom Prefix")
+        print("3. Show All Keys")
+        print("")
+        print("M. Main Menu")
+        print("Q. Quit")
+        print("")
+        menu = self.u.grab("Please select an option:  ")
+        if menu.lower() == "m": return
+        elif menu.lower() == "q": self.u.custom_quit()
+        elif menu == "1":
+            self.settings["hide_with_prefix"] = "#"
+            self.save_settings()
+        elif menu == "2":
+            self.settings["hide_with_prefix"] = self.custom_hide_prefix()
+            self.save_settings()
+        elif menu == "3":
+            self.settings["hide_with_prefix"] = None
+            self.save_settings()
+        self.hide_key_prefix()
+
+    def save_settings(self):
+        try: json.dump(self.settings,open(self.settings_file,"w"),indent=2)
+        except: pass
+
     def main(self):
         self.u.head()
         print("")
         print("Current Config:   {}".format(self.current_config))
         print("OC Sample Config: {}".format(self.sample_config))
+        print("Hide Keys Prefix: {}".format(self.settings.get("hide_with_prefix","#")))
         print("")
-        print("1. Get Latest Sample.plist")
-        print("2. Select Custom Sample.plist")
-        print("3. Select User Config.plist")
-        print("4. Compare (will use latest Sample.plist if none selected)")
+        print("1. Change Hide Keys Prefix")
+        print("2. Get Latest Sample.plist")
+        print("3. Select Custom Sample.plist")
+        print("4. Select User Config.plist")
+        print("5. Compare (will use latest Sample.plist if none selected)")
         print("")
         print("Q. Quit")
         print("")
@@ -153,18 +201,20 @@ class OCCC:
         if m == "q":
             self.u.custom_quit()
         elif m == "1":
+            self.hide_key_prefix()
+        elif m == "2":
             p = self.get_latest()
             if p is not None:
                 self.sample_config,self.sample_plist = p
-        elif m == "2":
+        elif m == "3":
             p = self.get_plist("OC Sample.plist")
             if p is not None:
                 self.sample_config,self.sample_plist = p
-        elif m == "3":
+        elif m == "4":
             p = self.get_plist("user config.plist")
             if p is not None:
                 self.current_config,self.current_plist = p
-        elif m == "4":
+        elif m == "5":
             self.compare()
 
 if __name__ == '__main__':
