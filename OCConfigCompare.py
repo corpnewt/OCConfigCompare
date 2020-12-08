@@ -83,7 +83,7 @@ class OCCC:
                     change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,type(val1),type(val)))
                     continue # Move forward as all underlying values will be different too
                 if isinstance(val,list) or isinstance(val,self.dict_types):
-                    change_list.extend(self.compare_value(val,val1[x],path+" -> "+x))
+                    change_list.extend(self.compare_value(val,val1,path+" -> "+x))
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to): return change_list # Nothing to do here
