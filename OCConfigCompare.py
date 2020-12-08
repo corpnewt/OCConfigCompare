@@ -77,9 +77,13 @@ class OCCC:
             for x in list(compare_from):
                 if x in not_keys: continue # Skip these as they're already not in the _to
                 if self.settings.get("hide_with_prefix","#") != None and x.startswith(self.settings.get("hide_with_prefix","#")): continue # Skipping this due to prefix
-                val = compare_from[x]
+                val  = compare_from[x]
+                val1 = compare_to[x]
+                if type(val) != type(val1):
+                    change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,type(val1),type(val)))
+                    continue # Move forward as all underlying values will be different too
                 if isinstance(val,list) or isinstance(val,self.dict_types):
-                    change_list.extend(self.compare_value(val,compare_to[x],path+" -> "+x))
+                    change_list.extend(self.compare_value(val,val1[x],path+" -> "+x))
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to): return change_list # Nothing to do here
