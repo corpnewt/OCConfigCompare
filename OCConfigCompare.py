@@ -1,5 +1,5 @@
 from Scripts import *
-import os, plistlib, json
+import os, plistlib, json, datetime, sys
 
 class OCCC:
     def __init__(self):
@@ -24,6 +24,27 @@ class OCCC:
                     self.sample_plist = plist.load(f)
             except:
                 self.sample_plist = self.sample_config = None
+
+    def is_data(self, value):
+        return (sys.version_info >= (3, 0) and isinstance(value, bytes)) or (sys.version_info < (3,0) and isinstance(value, plistlib.Data))
+
+    def get_type(self, value):
+        if isinstance(value, dict):
+            return "Dictionary"
+        elif isinstance(value, list):
+            return "Array"
+        elif isinstance(value, datetime.datetime):
+            return "Date"
+        elif self.is_data(value):
+            return "Data"
+        elif isinstance(value, bool):
+            return "Boolean"
+        elif isinstance(value, (int,float,long)):
+            return "Number"
+        elif isinstance(value, (str,unicode)):
+            return "String"
+        else:
+            return str(type(value))
 
     def compare(self):
         # First make sure we have plist info
@@ -63,7 +84,7 @@ class OCCC:
         change_list = []
         # Compare 2 collections and print anything that's in compare_from that's not in compare_to
         if type(compare_from) != type(compare_to):
-            change_list.append("{} - Type Difference: {} --> {}".format(path,type(compare_to),type(compare_from)))
+            change_list.append("{} - Type Difference: {} --> {}".format(path,self.get_type(compare_to),self.get_type(compare_from)))
             return change_list # Can't compare further - they're not the same type
         if isinstance(compare_from,self.dict_types):
             # Let's compare keys
@@ -80,7 +101,7 @@ class OCCC:
                 val  = compare_from[x]
                 val1 = compare_to[x]
                 if type(val) != type(val1):
-                    change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,type(val1),type(val)))
+                    change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,self.get_type(val1),self.get_type(val)))
                     continue # Move forward as all underlying values will be different too
                 if isinstance(val,list) or isinstance(val,self.dict_types):
                     change_list.extend(self.compare_value(val,val1,path+" -> "+x))
