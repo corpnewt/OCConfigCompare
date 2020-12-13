@@ -1,6 +1,13 @@
 from Scripts import *
 import os, plistlib, json, datetime, sys
 
+try:
+    long
+    unicode
+except NameError:  # Python 3
+    long = int
+    unicode = str
+
 class OCCC:
     def __init__(self):
         self.d = downloader.Downloader()
@@ -39,8 +46,10 @@ class OCCC:
             return "Data"
         elif isinstance(value, bool):
             return "Boolean"
-        elif isinstance(value, (int,float,long)):
-            return "Number"
+        elif isinstance(value, (int,long)):
+            return "Integer"
+        elif isinstance(value, float):
+            return "Real"
         elif isinstance(value, (str,unicode)):
             return "String"
         else:
