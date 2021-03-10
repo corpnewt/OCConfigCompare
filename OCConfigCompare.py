@@ -17,10 +17,11 @@ class OCCC:
         self.current_config = None
         self.current_plist  = None
         self.sample_plist   = None
-        self.sample_url     = "https://github.com/acidanthera/OpenCorePkg/raw/master/Docs/Sample.plist"
+        self.sample_url     = "https://github.com/acidanthera/OpenCorePkg/raw/{}/Docs/Sample.plist"
+        self.opencorpgk_url = "https://api.github.com/repos/acidanthera/OpenCorePkg/releases"
         self.sample_path    = os.path.join(os.path.dirname(os.path.realpath(__file__)),os.path.basename(self.sample_url))
         self.settings_file  = os.path.join(os.path.dirname(os.path.realpath(__file__)),"Scripts","settings.json")
-        self.settings       = {} # Smol settings dict - { "hide_with_prefix" : "#" }
+        self.settings       = {} # Smol settings dict - { "hide_with_prefix" : ["#"], "prefix_case_sensitive" : True }
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
             except: pass
@@ -61,9 +62,9 @@ class OCCC:
         if c is None:
             return
         self.current_config,self.current_plist = c
-        # Get the latest if we don't have one - or use the one we have
+        # Get the latest release if we don't have one - or use the one we have
         if self.sample_config is None:
-            s = self.get_latest(False)
+            s = self.get_latest(wait=False)
         else:
             s = self.get_plist("OC Sample.plist",self.sample_config)
         if s is None:
@@ -89,6 +90,14 @@ class OCCC:
         print("")
         self.u.grab("Press [enter] to return...")
 
+    def starts_with(self, value, prefixes):
+        case_sensitive = self.settings.get("prefix_case_sensitive", True)
+        if not case_sensitive: # Normalize case
+            prefixes = tuple([x.lower() for x in prefixes]) if isinstance(prefixes,(list,tuple)) else prefixes.lower()
+            value = value.lower()
+        if isinstance(prefixes,list): prefixes = tuple(prefixes)
+        return value.startswith(prefixes)
+
     def compare_value(self, compare_from, compare_to, path=""):
         change_list = []
         # Compare 2 collections and print anything that's in compare_from that's not in compare_to
@@ -98,15 +107,16 @@ class OCCC:
         if isinstance(compare_from,self.dict_types):
             # Let's compare keys
             not_keys = [x for x in list(compare_from) if not x in list(compare_to)]
-            if self.settings.get("hide_with_prefix","#") != None:
-                not_keys = [x for x in not_keys if not x.startswith(self.settings.get("hide_with_prefix","#"))]
-            if not_keys:
-                for x in not_keys:
-                    change_list.append("{} - Missing Key: {}".format(path,x))
+            check_hide = self.settings.get("hide_with_prefix","#")
+            if check_hide != None:
+                if not isinstance(check_hide,(list,tuple)): check_hide = (check_hide,)
+                not_keys = [x for x in not_keys if not self.starts_with(x,check_hide)]
+            for x in not_keys:
+                change_list.append("{} - Missing Key: {}".format(path,x))
             # Let's verify all other values if needed
             for x in list(compare_from):
                 if x in not_keys: continue # Skip these as they're already not in the _to
-                if self.settings.get("hide_with_prefix","#") != None and x.startswith(self.settings.get("hide_with_prefix","#")): continue # Skipping this due to prefix
+                if check_hide != None and self.starts_with(x,check_hide): continue # Skipping this due to prefix
                 val  = compare_from[x]
                 val1 = compare_to[x]
                 if type(val) != type(val1):
@@ -122,14 +132,22 @@ class OCCC:
                 change_list.extend(self.compare_value(compare_from[0],compare_to[0],path+" -> "+"Array"))
         return change_list
 
-    def get_latest(self,wait=True):
+    def get_latest(self,use_release=True,wait=True):
         self.u.head()
         print("")
+        if use_release:
+            # Get the commitish
+            try:
+                urlsource = json.loads(self.d.get_string(self.opencorpgk_url,False))
+                repl = urlsource[0]["target_commitish"]
+            except: repl = "master" # fall back on the latest commit if failed
+        else: repl = "master"
+        dl_url = self.sample_url.format(repl)
         print("Gathering latest Sample.plist from:")
-        print(self.sample_url)
+        print(dl_url)
         print("")
         p = None
-        dl_config = self.d.stream_to_file(self.sample_url,self.sample_path)
+        dl_config = self.d.stream_to_file(dl_url,self.sample_path)
         if not dl_config:
             print("\nFailed to download!\n")
             if wait: self.u.grab("Press [enter] to return...")
@@ -178,39 +196,92 @@ class OCCC:
                 continue
             return (pl,p) # Return the path and plist contents
 
+    def print_hide_keys(self):
+        hide_keys = self.settings.get("hide_with_prefix","#")
+        if isinstance(hide_keys,(list,tuple)): return ", ".join(hide_keys)
+        return hide_keys
+
     def custom_hide_prefix(self):
         self.u.head()
         print("")
-        print("Hide Keys Prefix: {}".format(self.settings.get("hide_with_prefix","#")))
+        print("Key Hide Prefixes: {}".format(self.print_hide_keys()))
         print("")
         pref = self.u.grab("Please enter the custom hide key prefix:  ")
         return pref if len(pref) else None
 
+    def remove_prefix(self):
+        prefixes = self.settings.get("hide_with_prefix","#")
+        if prefixes != None and not isinstance(prefixes,(list,tuple)):
+            prefixes = [prefixes]
+        while True:
+            self.u.head()
+            print("")
+            print("Key Hide Prefixes:")
+            print("")
+            if prefixes == None or not len(prefixes):
+                print(" - None")
+            else:
+                for i,x in enumerate(prefixes,start=1):
+                    print("{}. {}".format(i,x))
+            print("")
+            print("A. Remove All")
+            print("M. Prefix Menu")
+            print("Q. Quit")
+            print("")
+            pref = self.u.grab("Please enter the number of the prefix to remove:  ").lower()
+            if not len(pref): continue
+            if pref == "m": return None if prefixes == None or not len(prefixes) else prefixes
+            if pref == "q": self.u.custom_quit()
+            if pref == "a": return None
+            if prefixes == None: continue # Nothing to remove and not a menu option
+            else: # Hope for a number
+                try:
+                    pref = int(pref)-1
+                    assert 0 <= pref < len(prefixes)
+                except:
+                    continue
+                del prefixes[pref]
+
     def hide_key_prefix(self):
-        self.u.head()
-        print("")
-        print("Hide Keys Prefix: {}".format(self.settings.get("hide_with_prefix","#")))
-        print("")
-        print("1. Hide Keys Starting With #")
-        print("2. Input Custom Prefix")
-        print("3. Show All Keys")
-        print("")
-        print("M. Main Menu")
-        print("Q. Quit")
-        print("")
-        menu = self.u.grab("Please select an option:  ")
-        if menu.lower() == "m": return
-        elif menu.lower() == "q": self.u.custom_quit()
-        elif menu == "1":
-            self.settings["hide_with_prefix"] = "#"
-            self.save_settings()
-        elif menu == "2":
-            self.settings["hide_with_prefix"] = self.custom_hide_prefix()
-            self.save_settings()
-        elif menu == "3":
-            self.settings["hide_with_prefix"] = None
-            self.save_settings()
-        self.hide_key_prefix()
+        while True:
+            self.u.head()
+            print("")
+            print("Key Hide Prefixes: {}".format(self.print_hide_keys()))
+            print("")
+            print("1. Hide Only Keys Starting With #")
+            print("2. Add New Custom Prefix")
+            print("3. Remove Prefix")
+            print("4. Show All Keys")
+            print("")
+            print("M. Main Menu")
+            print("Q. Quit")
+            print("")
+            menu = self.u.grab("Please select an option:  ")
+            if menu.lower() == "m": return
+            elif menu.lower() == "q": self.u.custom_quit()
+            elif menu == "1":
+                self.settings["hide_with_prefix"] = "#"
+                self.save_settings()
+            elif menu == "2":
+                new_prefix = self.custom_hide_prefix()
+                if not new_prefix: continue # Nothing to add
+                prefixes = self.settings.get("hide_with_prefix")
+                if prefixes == None: prefixes = new_prefix # None set yet
+                elif isinstance(prefixes,(list,tuple)): # It's a list or tuple
+                    if new_prefix in prefixes: continue # Already in the list
+                    prefixes = list(prefixes)
+                    prefixes.append(new_prefix)
+                else:
+                    if prefixes == new_prefix: continue # Already set to that
+                    prefixes = [prefixes,new_prefix] # Is a string, probably
+                self.settings["hide_with_prefix"] = prefixes
+                self.save_settings()
+            elif menu == "3":
+                self.settings["hide_with_prefix"] = self.remove_prefix()
+                self.save_settings()
+            elif menu == "4":
+                self.settings["hide_with_prefix"] = None
+                self.save_settings()
 
     def save_settings(self):
         try: json.dump(self.settings,open(self.settings_file,"w"),indent=2)
@@ -219,25 +290,26 @@ class OCCC:
     def main(self):
         self.u.head()
         print("")
-        print("Current Config:   {}".format(self.current_config))
-        print("OC Sample Config: {}".format(self.sample_config))
-        print("Hide Keys Prefix: {}".format(self.settings.get("hide_with_prefix","#")))
+        print("Current Config:        {}".format(self.current_config))
+        print("OC Sample Config:      {}".format(self.sample_config))
+        print("Key Hide Prefixes:     {}".format(self.print_hide_keys()))
+        print("Prefix Case-Sensitive: {}".format(self.settings.get("prefix_case_sensitive",True)))
         print("")
-        print("1. Change Hide Keys Prefix")
-        print("2. Get Latest Sample.plist")
-        print("3. Select Custom Sample.plist")
-        print("4. Select User Config.plist")
-        print("5. Compare (will use latest Sample.plist if none selected)")
+        print("1. Get Latest Release Sample.plist")
+        print("2. Get Latest Commit Sample.plist")
+        print("3. Select Local Sample.plist")
+        print("4. Select Local User Config.plist")
+        print("5. Change Key Hide Prefixes")
+        print("6. Toggle Prefix Case-Sensitivity")
+        print("7. Compare (will use latest Sample.plist if none selected)")
         print("")
         print("Q. Quit")
         print("")
         m = self.u.grab("Please select an option:  ").lower()
         if m == "q":
             self.u.custom_quit()
-        elif m == "1":
-            self.hide_key_prefix()
-        elif m == "2":
-            p = self.get_latest()
+        elif m in ("1","2"):
+            p = self.get_latest(use_release=m=="1")
             if p is not None:
                 self.sample_config,self.sample_plist = p
         elif m == "3":
@@ -249,6 +321,11 @@ class OCCC:
             if p is not None:
                 self.current_config,self.current_plist = p
         elif m == "5":
+            self.hide_key_prefix()
+        elif m == "6":
+            self.settings["prefix_case_sensitive"] = False if self.settings.get("prefix_case_sensitive",True) else True
+            self.save_settings()
+        elif m == "7":
             self.compare()
 
 if __name__ == '__main__':
