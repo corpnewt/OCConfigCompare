@@ -249,9 +249,10 @@ class OCCC:
             print("Key Hide Prefixes: {}".format(self.print_hide_keys()))
             print("")
             print("1. Hide Only Keys Starting With #")
-            print("2. Add New Custom Prefix")
-            print("3. Remove Prefix")
-            print("4. Show All Keys")
+            print("2. Hide comments (#), PciRoot, and most OC NVRAM samples")
+            print("3. Add New Custom Prefix")
+            print("4. Remove Prefix")
+            print("5. Show All Keys")
             print("")
             print("M. Main Menu")
             print("Q. Quit")
@@ -261,8 +262,9 @@ class OCCC:
             elif menu.lower() == "q": self.u.custom_quit()
             elif menu == "1":
                 self.settings["hide_with_prefix"] = "#"
-                self.save_settings()
             elif menu == "2":
+                self.settings["hide_with_prefix"] = ["#","PciRoot","4D1EDE05-","4D1FDA02-","7C436110-","8BE4DF61-"]
+            elif menu == "3":
                 new_prefix = self.custom_hide_prefix()
                 if not new_prefix: continue # Nothing to add
                 prefixes = self.settings.get("hide_with_prefix","#")
@@ -275,13 +277,11 @@ class OCCC:
                     if prefixes == new_prefix: continue # Already set to that
                     prefixes = [prefixes,new_prefix] # Is a string, probably
                 self.settings["hide_with_prefix"] = prefixes
-                self.save_settings()
-            elif menu == "3":
-                self.settings["hide_with_prefix"] = self.remove_prefix()
-                self.save_settings()
             elif menu == "4":
+                self.settings["hide_with_prefix"] = self.remove_prefix()
+            elif menu == "5":
                 self.settings["hide_with_prefix"] = None
-                self.save_settings()
+            self.save_settings()
 
     def save_settings(self):
         try: json.dump(self.settings,open(self.settings_file,"w"),indent=2)
