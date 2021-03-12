@@ -265,7 +265,7 @@ class OCCC:
             elif menu == "2":
                 new_prefix = self.custom_hide_prefix()
                 if not new_prefix: continue # Nothing to add
-                prefixes = self.settings.get("hide_with_prefix")
+                prefixes = self.settings.get("hide_with_prefix","#")
                 if prefixes == None: prefixes = new_prefix # None set yet
                 elif isinstance(prefixes,(list,tuple)): # It's a list or tuple
                     if new_prefix in prefixes: continue # Already in the list
