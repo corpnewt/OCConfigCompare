@@ -1,5 +1,5 @@
 from Scripts import *
-import os, plistlib, json, datetime, sys
+import os, plistlib, json, datetime, sys, argparse
 
 try:
     long
@@ -56,7 +56,7 @@ class OCCC:
         else:
             return str(type(value))
 
-    def compare(self):
+    def compare(self,hide=False):
         # First make sure we have plist info
         c = self.get_plist("user config.plist",self.current_config)
         if c is None:
@@ -70,8 +70,9 @@ class OCCC:
         if s is None:
             return
         self.sample_config,self.sample_plist = s
-        self.u.head()
-        print("")
+        if not hide:
+            self.u.head()
+            print("")
         print("Checking for values missing from User plist:")
         print("")
         changes = self.compare_value(self.sample_plist,self.current_plist,os.path.basename(self.current_config))
@@ -88,7 +89,7 @@ class OCCC:
         else:
             print(" - Nothing missing from Sample config!")
         print("")
-        self.u.grab("Press [enter] to return...")
+        if not hide: self.u.grab("Press [enter] to return...")
 
     def starts_with(self, value, prefixes):
         case_sensitive = self.settings.get("prefix_case_sensitive", True)
@@ -132,9 +133,10 @@ class OCCC:
                 change_list.extend(self.compare_value(compare_from[0],compare_to[0],path+" -> "+"Array"))
         return change_list
 
-    def get_latest(self,use_release=True,wait=True):
-        self.u.head()
-        print("")
+    def get_latest(self,use_release=True,wait=True,hide=False):
+        if not hide:
+            self.u.head()
+            print("")
         if use_release:
             # Get the commitish
             try:
@@ -328,10 +330,62 @@ class OCCC:
         elif m == "7":
             self.compare()
 
+    def cli(self, user_plist = None, sample_plist = None):
+        # Let's normalize the plist paths - and use the latest sample.plist if no sample passed
+        if not user_plist:
+            print("User plist path is required!")
+            exit(1)
+        user_plist = self.u.check_path(user_plist)
+        if not user_plist:
+            print("User plist path invalid!")
+            exit(1)
+        # Try to load it
+        try:
+            with open(user_plist, "rb") as f:
+                user_plist_data = plist.load(f)
+        except Exception as e:
+            print("User plist failed to load! {}".format(e))
+            exit(1)
+        # It loads - save it
+        self.current_config = user_plist
+        # Check the sample_plist as needed
+        if sample_plist:
+            sample_plist = self.u.check_path(sample_plist)
+            if not sample_plist:
+                print("Sample plist path invalid!")
+                exit(1)
+            # Try to load it
+            try:
+                with open(sample_plist, "rb") as f:
+                    sample_plist_data = plist.load(f)
+            except Exception as e:
+                print("Sample plist failed to load! {}".format(e))
+                exit(1)
+            # Loads - we should be good - save it
+            self.sample_config = sample_plist
+        else:
+            # Let's get the latest commit
+            p = self.get_latest(use_release=False,wait=False,hide=True)
+            if not p:
+                print("Could not get the latest sample!")
+                exit(1)
+            self.sample_config,self.sample_plist = p
+        self.compare(hide=True)
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-u", "--user-plist", help="Path to the local user plist.")
+    parser.add_argument("-s", "--sample-plist", help="Path to the sample plist - will get the latest commit from OC if none passed.")
+    args = parser.parse_args()
+
+    o = OCCC()
+    if args.user_plist or args.sample_plist:
+        # We got a required arg - start in cli mode
+        o.cli(args.user_plist,args.sample_plist)
+        exit()
+
     if 2/3 == 0:
         input = raw_input
-    o = OCCC()
     while True:
         try:
             o.main()
