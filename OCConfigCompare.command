@@ -2,7 +2,7 @@
 
 # Get the curent directory, the script name
 # and the script name with "py" substituted for the extension.
-args="$@"
+args=( "$@" )
 dir="${0%/*}"
 script="${0##*/}"
 target="${script%.*}.py"
@@ -264,7 +264,7 @@ main() {
         return 1
     fi
     # Found it - start our script and pass all args
-    "$python" "$dir/$target" $args
+    "$python" "$dir/$target" "${args[@]}"
 }
 
 # Check to see if we need to force based on
