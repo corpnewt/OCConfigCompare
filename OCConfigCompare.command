@@ -75,9 +75,21 @@ download_py () {
     # Create a temp dir and download to it
     tempdir="$(mktemp -d 2>/dev/null || mktemp -d -t 'tempdir')"
     curl "$url" -o "$tempdir/python.pkg"
+    if [ "$?" != "0" ]; then
+        echo
+        echo " - Failed to download python installer!"
+        echo
+        exit $?
+    fi
     echo
     echo "Running python install package..."
     sudo installer -pkg "$tempdir/python.pkg" -target /
+    if [ "$?" != "0" ]; then
+        echo
+        echo " - Failed to install python!"
+        echo
+        exit $?
+    fi
     echo
     vers_folder="Python $(echo "$vers" | cut -d'.' -f1 -f2)"
     if [ -f "/Applications/$vers_folder/Install Certificates.command" ]; then
