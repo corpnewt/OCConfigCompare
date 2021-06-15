@@ -1,5 +1,5 @@
 from Scripts import *
-import os, plistlib, json, datetime, sys, argparse, copy
+import os, plistlib, json, datetime, sys, argparse, copy, datetime
 
 try:
     long
@@ -27,7 +27,8 @@ class OCCC:
             "prefix_case_sensitive" : True,
             "suppress_warnings"     : False,
             "update_user"           : False,
-            "update_sample"         : False
+            "update_sample"         : False,
+            "no_timestamp"          : False
         }"""
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
@@ -94,12 +95,19 @@ class OCCC:
         print("")
         for l,c,p in ((user_missing,user_copy,self.current_config),(sample_missing,sample_copy,self.sample_config)):
             if len(l) and c!=None:
-                print("Updating {} with changes...".format(os.path.basename(p)))
+                path = os.path.dirname(p)
+                name = os.path.basename(p)
+                if not self.settings.get("no_timestamp",False):
+                    needs_plist = name.lower().endswith(".plist")
+                    if needs_plist: name = name[:-6] # Strip the .plist extension
+                    name = "{}-{}".format(name,datetime.datetime.today().strftime("%Y-%m-%d %H.%M"))
+                    if needs_plist: name += ".plist" # Add it to the end again
+                print("Updating {} with changes...".format(name))
                 try:
-                    with open(p,"wb") as f:
+                    with open(os.path.join(path,name),"wb") as f:
                         plist.dump(c,f)
                 except Exception as e:
-                    print("Error saving {}: {}".format(os.path.basename(p),str(e)))
+                    print("Error saving {}: {}".format(name,str(e)))
                 print("")
 
         if not hide: self.u.grab("Press [enter] to return...")
@@ -412,12 +420,14 @@ if __name__ == '__main__':
     parser.add_argument("-w","--suppress-warnings",help="Suppress non-essential warnings when comparing.",action="store_true")
     parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
+    parser.add_argument("-t","--no-timestamp",help=argparse.SUPPRESS,action="store_true")
     args = parser.parse_args()
 
     o = OCCC()
     if args.suppress_warnings: o.settings["suppress_warnings"] = True
     if args.update_user: o.settings["update_user"] = True
     if args.update_sample: o.settings["update_sample"] = True
+    if args.no_timestamp: o.settings["no_timestamp"] = True
     if args.user_plist or args.sample_plist:
         # We got a required arg - start in cli mode
         o.cli(args.user_plist,args.sample_plist)
