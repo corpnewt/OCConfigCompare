@@ -129,9 +129,8 @@ class OCCC:
     def compare_value(self, compare_from, compare_to, to_copy = False, compare_copy = None, path=""):
         change_list = []
         # Compare 2 collections and print anything that's in compare_from that's not in compare_to
-        if type(compare_from) != type(compare_to):
+        if type(compare_from) != type(compare_to): # Should only happen if it's top level differences
             change_list.append("{} - Type Difference: {} --> {}".format(path,self.get_type(compare_to),self.get_type(compare_from)))
-            if to_copy: compare_copy = compare_from
         elif isinstance(compare_from,self.dict_types):
             # Let's compare keys
             not_keys = self.get_valid_keys([x for x in list(compare_from) if not x in list(compare_to)])
@@ -142,7 +141,12 @@ class OCCC:
             for x in list(compare_from):
                 if x in not_keys: continue # Skip these as they're already not in the _to
                 if self.starts_with(x): continue # Skipping this due to prefix
-                change_list.extend(self.compare_value(compare_from[x],compare_to[x],path=path+" -> "+x,to_copy=to_copy,compare_copy=compare_copy[x] if to_copy else None))
+                if type(compare_from[x]) != type(compare_to[x]):
+                    if to_copy: compare_copy[x] = compare_from[x]
+                    change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,self.get_type(compare_to[x]),self.get_type(compare_from[x])))
+                    continue # Move forward as all underlying values will be different too
+                if isinstance(compare_from[x],list) or isinstance(compare_from[x],self.dict_types):
+                    change_list.extend(self.compare_value(compare_from[x],compare_to[x],path=path+" -> "+x,to_copy=to_copy,compare_copy=compare_copy[x] if to_copy else None))
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to):
