@@ -1,5 +1,5 @@
 from Scripts import *
-import os, plistlib, json, datetime, sys, argparse
+import os, plistlib, json, datetime, sys, argparse, copy
 
 try:
     long
@@ -21,7 +21,14 @@ class OCCC:
         self.opencorpgk_url = "https://api.github.com/repos/acidanthera/OpenCorePkg/releases"
         self.sample_path    = os.path.join(os.path.dirname(os.path.realpath(__file__)),os.path.basename(self.sample_url))
         self.settings_file  = os.path.join(os.path.dirname(os.path.realpath(__file__)),"Scripts","settings.json")
-        self.settings       = {} # Smol settings dict - { "hide_with_prefix" : ["#"], "prefix_case_sensitive" : True }
+        self.settings       = {} 
+        """Smol default settings dict = {
+            "hide_with_prefix"      : ["#"],
+            "prefix_case_sensitive" : True,
+            "suppress_warnings"     : False,
+            "user_changes"          : False,
+            "sample_changes"        : False
+        }"""
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
             except: pass
@@ -75,62 +82,88 @@ class OCCC:
             print("")
         print("Checking for values missing from User plist:")
         print("")
-        changes = self.compare_value(self.sample_plist,self.current_plist,os.path.basename(self.current_config))
-        if len(changes):
-            print("\n".join(changes))
-        else:
-            print(" - Nothing missing from User config!")
+        user_copy = copy.deepcopy(self.current_plist) if self.settings.get("user_changes",False) else None
+        user_missing = self.compare_value(self.sample_plist,self.current_plist,path=os.path.basename(self.current_config),to_copy=user_copy!=None,compare_copy=user_copy)
+        print("\n".join(user_missing) if len(user_missing) else " - Nothing missing from User config!")
         print("")
         print("Checking for values missing from Sample:")
         print("")
-        changes = self.compare_value(self.current_plist,self.sample_plist,os.path.basename(self.sample_config))
-        if len(changes):
-            print("\n".join(changes))
-        else:
-            print(" - Nothing missing from Sample config!")
+        sample_copy = copy.deepcopy(self.sample_plist) if self.settings.get("sample_changes",False) else None
+        sample_missing = self.compare_value(self.current_plist,self.sample_plist,path=os.path.basename(self.sample_config),to_copy=sample_copy!=None,compare_copy=sample_copy)
+        print("\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!")
         print("")
+        for l,c,p in ((user_missing,user_copy,self.current_config),(sample_missing,sample_copy,self.sample_config)):
+            if len(l) and c!=None:
+                print("Updating {} with changes...".format(os.path.basename(p)))
+                try:
+                    with open(p,"wb") as f:
+                        plist.dump(c,f)
+                except Exception as e:
+                    print("Error saving {}: {}".format(os.path.basename(p),str(e)))
+                print("")
+
         if not hide: self.u.grab("Press [enter] to return...")
 
-    def starts_with(self, value, prefixes):
-        case_sensitive = self.settings.get("prefix_case_sensitive", True)
+    def starts_with(self, value, prefixes=None):
+        if prefixes is None: prefixes = self.settings.get("hide_with_prefix","#")
+        if prefixes is None: return False # Nothing passed, and nothing in settings - everything is allowed
+        case_sensitive = self.settings.get("prefix_case_sensitive",True)
         if not case_sensitive: # Normalize case
-            prefixes = tuple([x.lower() for x in prefixes]) if isinstance(prefixes,(list,tuple)) else prefixes.lower()
+            prefixes = [x.lower() for x in prefixes] if isinstance(prefixes,(list,tuple)) else prefixes.lower()
             value = value.lower()
-        if isinstance(prefixes,list): prefixes = tuple(prefixes)
+        if isinstance(prefixes,list): prefixes = tuple(prefixes) # Convert to tuple if need be
+        if not isinstance(prefixes,tuple): prefixes = (prefixes,) # Wrap up in tuple as needed
         return value.startswith(prefixes)
 
-    def compare_value(self, compare_from, compare_to, path=""):
+    def get_valid_keys(self, check_dict):
+        return [x for x in check_dict if not self.starts_with(x,prefixes=None)]
+
+    def compare_value(self, compare_from, compare_to, to_copy = False, compare_copy = None, path=""):
         change_list = []
         # Compare 2 collections and print anything that's in compare_from that's not in compare_to
         if type(compare_from) != type(compare_to):
             change_list.append("{} - Type Difference: {} --> {}".format(path,self.get_type(compare_to),self.get_type(compare_from)))
-            return change_list # Can't compare further - they're not the same type
-        if isinstance(compare_from,self.dict_types):
+            if to_copy: compare_copy = compare_from
+        elif isinstance(compare_from,self.dict_types):
             # Let's compare keys
-            not_keys = [x for x in list(compare_from) if not x in list(compare_to)]
-            check_hide = self.settings.get("hide_with_prefix","#")
-            if check_hide != None:
-                if not isinstance(check_hide,(list,tuple)): check_hide = (check_hide,)
-                not_keys = [x for x in not_keys if not self.starts_with(x,check_hide)]
+            not_keys = self.get_valid_keys([x for x in list(compare_from) if not x in list(compare_to)])
             for x in not_keys:
+                if to_copy: compare_copy[x] = compare_from[x]
                 change_list.append("{} - Missing Key: {}".format(path,x))
             # Let's verify all other values if needed
             for x in list(compare_from):
                 if x in not_keys: continue # Skip these as they're already not in the _to
-                if check_hide != None and self.starts_with(x,check_hide): continue # Skipping this due to prefix
-                val  = compare_from[x]
-                val1 = compare_to[x]
-                if type(val) != type(val1):
-                    change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,self.get_type(val1),self.get_type(val)))
-                    continue # Move forward as all underlying values will be different too
-                if isinstance(val,list) or isinstance(val,self.dict_types):
-                    change_list.extend(self.compare_value(val,val1,path+" -> "+x))
+                if self.starts_with(x): continue # Skipping this due to prefix
+                change_list.extend(self.compare_value(compare_from[x],compare_to[x],path=path+" -> "+x,to_copy=to_copy,compare_copy=compare_copy[x] if to_copy else None))
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
-            if not len(compare_from) or not len(compare_to): return change_list # Nothing to do here
-            if isinstance(compare_from[0],self.dict_types):
-                # Let's compare keys
-                change_list.extend(self.compare_value(compare_from[0],compare_to[0],path+" -> "+"Array"))
+            if not len(compare_from) or not len(compare_to):
+                if not self.settings.get("suppress_warnings"): change_list.append(path+" -> {}-Array - Empty: Skipped".format("From|To" if not len(compare_from) and not len(compare_to) else "From" if not len(compare_from) else "To"))
+            elif not all((isinstance(x,self.dict_types) for x in compare_from)):
+                if not self.settings.get("suppress_warnings"): change_list.append(path+" -> From-Array - Non-Dictionary Children: Skipped")
+            else:
+                # All children of compare_from are dicts - let's ensure consistent keys
+                valid_keys = []
+                for x in compare_from: valid_keys.extend(self.get_valid_keys(x))
+                valid_keys = set(valid_keys)
+                global_keys = []
+                for key in valid_keys:
+                    if all((key in x for x in compare_from)): global_keys.append(key)
+                global_keys = set(global_keys)
+                if not global_keys:
+                    if not self.settings.get("suppress_warnings"): change_list.append(path+" -> From-Array - All Child Keys Differ: Skipped")
+                else:
+                    if global_keys != valid_keys:
+                        if not self.settings.get("suppress_warnings"): change_list.append(path+" -> From-Array - Child Keys Differ: Checking Consistent")
+                        # Build a key placeholder to check using only consistent keys
+                        compare_placeholder = {}
+                        for key in global_keys: compare_placeholder[key] = compare_from[0][key]
+                    else:
+                        # Fall back on compare_from[0]
+                        compare_placeholder = compare_from[0]
+                    # Compare keys, pull consistent placeholders from compare_placeholder
+                    for i,check in enumerate(compare_to):
+                        change_list.extend(self.compare_value(compare_placeholder,compare_to[i],path=path+" -> Array[{}]".format(i),to_copy=to_copy,compare_copy=compare_copy[i] if to_copy else None))
         return change_list
 
     def get_latest(self,use_release=True,wait=True,hide=False):
