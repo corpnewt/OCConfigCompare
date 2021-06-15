@@ -26,8 +26,8 @@ class OCCC:
             "hide_with_prefix"      : ["#"],
             "prefix_case_sensitive" : True,
             "suppress_warnings"     : False,
-            "user_changes"          : False,
-            "sample_changes"        : False
+            "update_user"           : False,
+            "update_sample"         : False
         }"""
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
@@ -82,13 +82,13 @@ class OCCC:
             print("")
         print("Checking for values missing from User plist:")
         print("")
-        user_copy = copy.deepcopy(self.current_plist) if self.settings.get("user_changes",False) else None
+        user_copy = copy.deepcopy(self.current_plist) if self.settings.get("update_user",False) else None
         user_missing = self.compare_value(self.sample_plist,self.current_plist,path=os.path.basename(self.current_config),to_copy=user_copy!=None,compare_copy=user_copy)
         print("\n".join(user_missing) if len(user_missing) else " - Nothing missing from User config!")
         print("")
         print("Checking for values missing from Sample:")
         print("")
-        sample_copy = copy.deepcopy(self.sample_plist) if self.settings.get("sample_changes",False) else None
+        sample_copy = copy.deepcopy(self.sample_plist) if self.settings.get("update_sample",False) else None
         sample_missing = self.compare_value(self.current_plist,self.sample_plist,path=os.path.basename(self.sample_config),to_copy=sample_copy!=None,compare_copy=sample_copy)
         print("\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!")
         print("")
@@ -407,11 +407,17 @@ class OCCC:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-u", "--user-plist", help="Path to the local user plist.")
-    parser.add_argument("-s", "--sample-plist", help="Path to the sample plist - will get the latest commit from OC if none passed.")
+    parser.add_argument("-u","--user-plist",help="Path to the local user plist.")
+    parser.add_argument("-s","--sample-plist",help="Path to the sample plist - will get the latest commit from OC if none passed.")
+    parser.add_argument("-w","--suppress-warnings",help="Suppress non-essential warnings when comparing.",action="store_true")
+    parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
+    parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
     args = parser.parse_args()
 
     o = OCCC()
+    if args.suppress_warnings: o.settings["suppress_warnings"] = True
+    if args.update_user: o.settings["update_user"] = True
+    if args.update_sample: o.settings["update_sample"] = True
     if args.user_plist or args.sample_plist:
         # We got a required arg - start in cli mode
         o.cli(args.user_plist,args.sample_plist)
