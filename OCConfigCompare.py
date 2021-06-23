@@ -422,10 +422,23 @@ if __name__ == '__main__':
     parser.add_argument("-u","--user-plist",help="Path to the local user plist.")
     parser.add_argument("-s","--sample-plist",help="Path to the sample plist - will get the latest commit from OC if none passed.")
     parser.add_argument("-w","--suppress-warnings",help="Suppress non-essential warnings when comparing.",action="store_true")
+    parser.add_argument("-d","--dev-help",help="Show the help menu with developer options visible.",action="store_true")
     parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-t","--no-timestamp",help=argparse.SUPPRESS,action="store_true")
     args = parser.parse_args()
+
+    if args.dev_help: # Update the developer options help, and show it
+        update = {
+            "update_user":"Pull changes into a timestamped copy (unless overridden by -t) of the user plist.",
+            "update_sample":"Pull changes into a timestamped copy (unless overridden by -t) of the sample plist.",
+            "no_timestamp":"Pull changes directly into the user or sample plist without a timestamped copy (requires -p or -l)."
+        }
+        for action in parser._actions:
+            if not action.dest in update: continue
+            action.help = update[action.dest]
+        parser.print_help()
+        exit()
 
     o = OCCC()
     if args.suppress_warnings: o.settings["suppress_warnings"] = True
