@@ -1,5 +1,5 @@
 from Scripts import *
-import os, plistlib, json, datetime, sys, argparse, copy, datetime
+import os, plistlib, json, datetime, sys, argparse, copy, datetime, shutil
 
 try:
     long
@@ -28,7 +28,8 @@ class OCCC:
             "suppress_warnings"     : False,
             "update_user"           : False,
             "update_sample"         : False,
-            "no_timestamp"          : False
+            "no_timestamp"          : False,
+            "backup_original"       : False
         }"""
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
@@ -64,6 +65,13 @@ class OCCC:
         else:
             return str(type(value))
 
+    def get_timestamp(self,name="config.plist",backup=False):
+        needs_plist = name.lower().endswith(".plist")
+        if needs_plist: name = name[:-6] # Strip the .plist extension
+        name = "{}-{}{}".format(name,"backup-" if backup else "",datetime.datetime.today().strftime("%Y-%m-%d-%H.%M"))
+        if needs_plist: name += ".plist" # Add it to the end again
+        return name
+
     def compare(self,hide=False):
         # First make sure we have plist info
         c = self.get_plist("user config.plist",self.current_config)
@@ -94,14 +102,15 @@ class OCCC:
         print("\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!")
         print("")
         for l,c,p in ((user_missing,user_copy,self.current_config),(sample_missing,sample_copy,self.sample_config)):
-            if len(l) and c!=None:
+            if len([x for x in l if not x.lower().endswith(": skipped")]) and c!=None:
                 path = os.path.dirname(p)
                 name = os.path.basename(p)
-                if not self.settings.get("no_timestamp",False):
-                    needs_plist = name.lower().endswith(".plist")
-                    if needs_plist: name = name[:-6] # Strip the .plist extension
-                    name = "{}-{}".format(name,datetime.datetime.today().strftime("%Y-%m-%d %H.%M"))
-                    if needs_plist: name += ".plist" # Add it to the end again
+                if self.settings.get("backup_original",False):
+                    backup_name = self.get_timestamp(name,backup=True)
+                    print("Backing up {} -> {}...".format(name,backup_name))
+                    shutil.copy(p,os.path.join(path,backup_name))
+                elif not self.settings.get("no_timestamp",False):
+                    name = self.get_timestamp(name)
                 print("Updating {} with changes...".format(name))
                 try:
                     with open(os.path.join(path,name),"wb") as f:
@@ -109,7 +118,6 @@ class OCCC:
                 except Exception as e:
                     print("Error saving {}: {}".format(name,str(e)))
                 print("")
-
         if not hide: self.u.grab("Press [enter] to return...")
 
     def starts_with(self, value, prefixes=None):
@@ -426,13 +434,15 @@ if __name__ == '__main__':
     parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-t","--no-timestamp",help=argparse.SUPPRESS,action="store_true")
+    parser.add_argument("-b","--backup-original",help=argparse.SUPPRESS,action="store_true")
     args = parser.parse_args()
 
     if args.dev_help: # Update the developer options help, and show it
         update = {
-            "update_user":"Pull changes into a timestamped copy (unless overridden by -t) of the user plist.",
-            "update_sample":"Pull changes into a timestamped copy (unless overridden by -t) of the sample plist.",
-            "no_timestamp":"Pull changes directly into the user or sample plist without a timestamped copy (requires -p or -l)."
+            "update_user":"Pull changes into a timestamped copy (unless overridden by -t or -b) of the user plist.",
+            "update_sample":"Pull changes into a timestamped copy (unless overridden by -t or -b) of the sample plist.",
+            "no_timestamp":"Pull changes directly into the user or sample plist without a timestamped copy (requires -p or -l).",
+            "backup_original":"Backup the user or sample plist with a timestamp before replacing it directly (requires -p or -l, overrides -t)"
         }
         for action in parser._actions:
             if not action.dest in update: continue
@@ -445,6 +455,9 @@ if __name__ == '__main__':
     if args.update_user: o.settings["update_user"] = True
     if args.update_sample: o.settings["update_sample"] = True
     if args.no_timestamp: o.settings["no_timestamp"] = True
+    if args.backup_original:
+        o.settings["no_timestamp"] = False
+        o.settings["backup_original"] = True
     if args.user_plist or args.sample_plist:
         # We got a required arg - start in cli mode
         o.cli(args.user_plist,args.sample_plist)
