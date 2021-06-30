@@ -191,10 +191,10 @@ class OCCC:
             self.u.head()
             print("")
         if use_release:
-            # Get the commitish
+            # Get the tag name
             try:
                 urlsource = json.loads(self.d.get_string(self.opencorpgk_url,False))
-                repl = urlsource[0]["target_commitish"]
+                repl = urlsource[0]["tag_name"]
             except: repl = "master" # fall back on the latest commit if failed
         else: repl = "master"
         dl_url = self.sample_url.format(repl)
