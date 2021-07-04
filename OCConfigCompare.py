@@ -14,6 +14,11 @@ class OCCC:
         self.u = utils.Utils("OC Config Compare")
         if 2/3 == 0: self.dict_types = (dict,plistlib._InternalDict)
         else: self.dict_types = (dict)
+        self.w = 80
+        self.h = 24
+        if os.name == "nt":
+            self.w = 120
+            self.h = 30
         self.current_config = None
         self.current_plist  = None
         self.sample_plist   = None
@@ -29,7 +34,8 @@ class OCCC:
             "update_user"           : False,
             "update_sample"         : False,
             "no_timestamp"          : False,
-            "backup_original"       : False
+            "backup_original"       : False,
+            "resize_window"         : True
         }"""
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
@@ -88,36 +94,41 @@ class OCCC:
         self.sample_config,self.sample_plist = s
         if not hide:
             self.u.head()
-            print("")
-        print("Checking for values missing from User plist:")
-        print("")
+            print("\nGathering differences...")
+        p_string = ""
+        p_string += "\nChecking for values missing from User plist:\n\n"
         user_copy = copy.deepcopy(self.current_plist) if self.settings.get("update_user",False) else None
         user_missing = self.compare_value(self.sample_plist,self.current_plist,path=os.path.basename(self.current_config),to_copy=user_copy!=None,compare_copy=user_copy)
-        print("\n".join(user_missing) if len(user_missing) else " - Nothing missing from User config!")
-        print("")
-        print("Checking for values missing from Sample:")
-        print("")
+        p_string += "\n".join(user_missing) if len(user_missing) else " - Nothing missing from User config!"
+        p_string += "\n\nChecking for values missing from Sample:\n\n"
         sample_copy = copy.deepcopy(self.sample_plist) if self.settings.get("update_sample",False) else None
         sample_missing = self.compare_value(self.current_plist,self.sample_plist,path=os.path.basename(self.sample_config),to_copy=sample_copy!=None,compare_copy=sample_copy)
-        print("\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!")
-        print("")
+        p_string += "\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!"
+        p_string += "\n"
         for l,c,p in ((user_missing,user_copy,self.current_config),(sample_missing,sample_copy,self.sample_config)):
-            if len([x for x in l if not x.lower().endswith(": skipped")]) and c!=None:
+            if c!=None and len([x for x in l if not x.lower().endswith(": skipped")]):
                 path = os.path.dirname(p)
                 name = os.path.basename(p)
                 if self.settings.get("backup_original",False):
                     backup_name = self.get_timestamp(name,backup=True)
-                    print("Backing up {} -> {}...".format(name,backup_name))
+                    p_string += "\nBacking up {} -> {}...".format(name,backup_name)
                     shutil.copy(p,os.path.join(path,backup_name))
                 elif not self.settings.get("no_timestamp",False):
                     name = self.get_timestamp(name)
-                print("Updating {} with changes...".format(name))
+                p_string += "\nUpdating {} with changes...".format(name)
                 try:
                     with open(os.path.join(path,name),"wb") as f:
                         plist.dump(c,f)
                 except Exception as e:
-                    print("Error saving {}: {}".format(name,str(e)))
-                print("")
+                    p_string += "\nError saving {}: {}".format(name,str(e))
+                p_string += "\n"
+        w = max([len(x) for x in p_string.split("\n")])+1
+        h = 5 + len(p_string.split("\n"))
+        if self.settings.get("resize_window",True): self.u.resize(w if w > self.w else self.w, h if h > self.h else self.h)
+        if not hide:
+            if self.settings.get("resize_window",True): self.u.resize(w if w > self.w else self.w, h if h > self.h else self.h)
+            self.u.head()
+        print(p_string)
         if not hide: self.u.grab("Press [enter] to return...")
 
     def starts_with(self, value, prefixes=None):
@@ -188,6 +199,7 @@ class OCCC:
 
     def get_latest(self,use_release=True,wait=True,hide=False):
         if not hide:
+            if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
             self.u.head()
             print("")
         if use_release:
@@ -220,6 +232,7 @@ class OCCC:
         return (dl_config,p)
 
     def get_plist(self,plist_name="config.plist",plist_path=None):
+        if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
         while True:
             if plist_path != None:
                 m = plist_path
@@ -308,6 +321,7 @@ class OCCC:
             print("3. Add New Custom Prefix")
             print("4. Remove Prefix")
             print("5. Show All Keys")
+            print("6. Toggle Suppress Warnings (Currently {})".format(self.settings.get("suppress_warnings",False)))
             print("")
             print("M. Main Menu")
             print("Q. Quit")
@@ -336,6 +350,8 @@ class OCCC:
                 self.settings["hide_with_prefix"] = self.remove_prefix()
             elif menu == "5":
                 self.settings["hide_with_prefix"] = None
+            elif menu == "6":
+                self.settings["suppress_warnings"] = not self.settings.get("suppress_warnings",False)
             self.save_settings()
 
     def save_settings(self):
@@ -343,6 +359,7 @@ class OCCC:
         except: pass
 
     def main(self):
+        if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
         self.u.head()
         print("")
         print("Current Config:        {}".format(self.current_config))
@@ -362,6 +379,7 @@ class OCCC:
         print("")
         m = self.u.grab("Please select an option:  ").lower()
         if m == "q":
+            if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
             self.u.custom_quit()
         elif m in ("1","2"):
             p = self.get_latest(use_release=m=="1")
