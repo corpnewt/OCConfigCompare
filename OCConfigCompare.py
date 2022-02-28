@@ -28,15 +28,16 @@ class OCCC:
         self.settings_file  = os.path.join(os.path.dirname(os.path.realpath(__file__)),"Scripts","settings.json")
         self.settings       = {} 
         """Smol default settings dict = {
-            "hide_with_prefix"      : ["#"],
+            "hide_with_prefix"      : ["#","PciRoot","4D1EDE05-","4D1FDA02-","7C436110-","8BE4DF61-"],
             "prefix_case_sensitive" : True,
-            "suppress_warnings"     : False,
+            "suppress_warnings"     : True,
             "update_user"           : False,
             "update_sample"         : False,
             "no_timestamp"          : False,
             "backup_original"       : False,
             "resize_window"         : True
         }"""
+        self.default_hide = ["#","PciRoot","4D1EDE05-","4D1FDA02-","7C436110-","8BE4DF61-"]
         if os.path.exists(self.settings_file):
             try: self.settings = json.load(open(self.settings_file))
             except: pass
@@ -80,7 +81,7 @@ class OCCC:
 
     def compare(self,hide=False):
         # First make sure we have plist info
-        c = self.get_plist("user config.plist",self.current_config)
+        c = self.get_plist("user config.plist",self.current_config,hide=hide)
         if c is None:
             return
         self.current_config,self.current_plist = c
@@ -88,7 +89,7 @@ class OCCC:
         if self.sample_config is None:
             s = self.get_latest(wait=False)
         else:
-            s = self.get_plist("OC Sample.plist",self.sample_config)
+            s = self.get_plist("OC Sample.plist",self.sample_config,hide=hide)
         if s is None:
             return
         self.sample_config,self.sample_plist = s
@@ -124,7 +125,6 @@ class OCCC:
                 p_string += "\n"
         w = max([len(x) for x in p_string.split("\n")])+1
         h = 5 + len(p_string.split("\n"))
-        if self.settings.get("resize_window",True): self.u.resize(w if w > self.w else self.w, h if h > self.h else self.h)
         if not hide:
             if self.settings.get("resize_window",True): self.u.resize(w if w > self.w else self.w, h if h > self.h else self.h)
             self.u.head()
@@ -132,7 +132,7 @@ class OCCC:
         if not hide: self.u.grab("Press [enter] to return...")
 
     def starts_with(self, value, prefixes=None):
-        if prefixes is None: prefixes = self.settings.get("hide_with_prefix","#")
+        if prefixes is None: prefixes = self.settings.get("hide_with_prefix",self.default_hide)
         if prefixes is None: return False # Nothing passed, and nothing in settings - everything is allowed
         case_sensitive = self.settings.get("prefix_case_sensitive",True)
         if not case_sensitive: # Normalize case
@@ -169,9 +169,9 @@ class OCCC:
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to):
-                if not self.settings.get("suppress_warnings"): change_list.append(path+" -> {}-Array - Empty: Skipped".format("From|To" if not len(compare_from) and not len(compare_to) else "From" if not len(compare_from) else "To"))
+                if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> {}-Array - Empty: Skipped".format("From|To" if not len(compare_from) and not len(compare_to) else "From" if not len(compare_from) else "To"))
             elif not all((isinstance(x,self.dict_types) for x in compare_from)):
-                if not self.settings.get("suppress_warnings"): change_list.append(path+" -> From-Array - Non-Dictionary Children: Skipped")
+                if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - Non-Dictionary Children: Skipped")
             else:
                 # All children of compare_from are dicts - let's ensure consistent keys
                 valid_keys = []
@@ -182,10 +182,10 @@ class OCCC:
                     if all((key in x for x in compare_from)): global_keys.append(key)
                 global_keys = set(global_keys)
                 if not global_keys:
-                    if not self.settings.get("suppress_warnings"): change_list.append(path+" -> From-Array - All Child Keys Differ: Skipped")
+                    if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - All Child Keys Differ: Skipped")
                 else:
                     if global_keys != valid_keys:
-                        if not self.settings.get("suppress_warnings"): change_list.append(path+" -> From-Array - Child Keys Differ: Checking Consistent")
+                        if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - Child Keys Differ: Checking Consistent")
                         # Build a key placeholder to check using only consistent keys
                         compare_placeholder = {}
                         for key in global_keys: compare_placeholder[key] = compare_from[0][key]
@@ -231,8 +231,8 @@ class OCCC:
         if wait: self.u.grab("Press [enter] to return...")
         return (dl_config,p)
 
-    def get_plist(self,plist_name="config.plist",plist_path=None):
-        if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
+    def get_plist(self,plist_name="config.plist",plist_path=None,hide=False):
+        if not hide and self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
         while True:
             if plist_path != None:
                 m = plist_path
@@ -265,7 +265,7 @@ class OCCC:
             return (pl,p) # Return the path and plist contents
 
     def print_hide_keys(self):
-        hide_keys = self.settings.get("hide_with_prefix","#")
+        hide_keys = self.settings.get("hide_with_prefix",self.default_hide)
         if isinstance(hide_keys,(list,tuple)): return ", ".join(hide_keys)
         return hide_keys
 
@@ -278,7 +278,7 @@ class OCCC:
         return pref if len(pref) else None
 
     def remove_prefix(self):
-        prefixes = self.settings.get("hide_with_prefix","#")
+        prefixes = self.settings.get("hide_with_prefix",self.default_hide)
         if prefixes != None and not isinstance(prefixes,(list,tuple)):
             prefixes = [prefixes]
         while True:
@@ -315,13 +315,14 @@ class OCCC:
             self.u.head()
             print("")
             print("Key Hide Prefixes: {}".format(self.print_hide_keys()))
+            print("Suppress Warnings: {}".format(self.settings.get("suppress_warnings",True)))
             print("")
             print("1. Hide Only Keys Starting With #")
             print("2. Hide comments (#), PciRoot, and most OC NVRAM samples")
             print("3. Add New Custom Prefix")
             print("4. Remove Prefix")
             print("5. Show All Keys")
-            print("6. Toggle Suppress Warnings (Currently {})".format(self.settings.get("suppress_warnings",False)))
+            print("6. {} Warnings".format("Show" if self.settings.get("suppress_warnings",True) else "Suppress"))
             print("")
             print("M. Main Menu")
             print("Q. Quit")
@@ -336,7 +337,7 @@ class OCCC:
             elif menu == "3":
                 new_prefix = self.custom_hide_prefix()
                 if not new_prefix: continue # Nothing to add
-                prefixes = self.settings.get("hide_with_prefix","#")
+                prefixes = self.settings.get("hide_with_prefix",self.default_hide)
                 if prefixes == None: prefixes = new_prefix # None set yet
                 elif isinstance(prefixes,(list,tuple)): # It's a list or tuple
                     if new_prefix in prefixes: continue # Already in the list
@@ -351,7 +352,7 @@ class OCCC:
             elif menu == "5":
                 self.settings["hide_with_prefix"] = None
             elif menu == "6":
-                self.settings["suppress_warnings"] = not self.settings.get("suppress_warnings",False)
+                self.settings["suppress_warnings"] = not self.settings.get("suppress_warnings",True)
             self.save_settings()
 
     def save_settings(self):
@@ -359,6 +360,7 @@ class OCCC:
         except: pass
 
     def main(self):
+        print("main")
         if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
         self.u.head()
         print("")
@@ -366,12 +368,13 @@ class OCCC:
         print("OC Sample Config:      {}".format(self.sample_config))
         print("Key Hide Prefixes:     {}".format(self.print_hide_keys()))
         print("Prefix Case-Sensitive: {}".format(self.settings.get("prefix_case_sensitive",True)))
+        print("Suppress Warnings:     {}".format(self.settings.get("suppress_warnings",True)))
         print("")
         print("1. Get Latest Release Sample.plist")
         print("2. Get Latest Commit Sample.plist")
         print("3. Select Local Sample.plist")
         print("4. Select Local User Config.plist")
-        print("5. Change Key Hide Prefixes")
+        print("5. Change Key Hide Prefixes/Warnings")
         print("6. Toggle Prefix Case-Sensitivity")
         print("7. Compare (will use latest Sample.plist if none selected)")
         print("")
@@ -396,7 +399,7 @@ class OCCC:
         elif m == "5":
             self.hide_key_prefix()
         elif m == "6":
-            self.settings["prefix_case_sensitive"] = False if self.settings.get("prefix_case_sensitive",True) else True
+            self.settings["prefix_case_sensitive"] = not self.settings.get("prefix_case_sensitive",True)
             self.save_settings()
         elif m == "7":
             self.compare()
@@ -447,7 +450,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-u","--user-plist",help="Path to the local user plist.")
     parser.add_argument("-s","--sample-plist",help="Path to the sample plist - will get the latest commit from OC if none passed.")
-    parser.add_argument("-w","--suppress-warnings",help="Suppress non-essential warnings when comparing.",action="store_true")
+    parser.add_argument("-w","--suppress-warnings",help="Yes/no (default: yes), sets if non-essential warnings (empty lists, etc) show when comparing - overrides settings.",nargs="?",const="1")
+    parser.add_argument("-v","--verbose",help="Print more verbose output - forces '-w yes' and '-n' - overrides settings.",action="store_true")
+    parser.add_argument("-x","--hide-prefix",help="Prefix to hide when comparing.",action="append")
+    parser.add_argument("-n","--no-prefix",help="Clears all hide prefixes - overrides '-x' and settings.",action="store_true")
+    parser.add_argument("-c","--case-sensitive",help="Yes/no (default: yes), sets hide prefix case-sensitivity - overrides settings.",nargs="?",const="1")
     parser.add_argument("-d","--dev-help",help="Show the help menu with developer options visible.",action="store_true")
     parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
@@ -469,10 +476,28 @@ if __name__ == '__main__':
         exit()
 
     o = OCCC()
-    if args.suppress_warnings: o.settings["suppress_warnings"] = True
+    def get_yes_no(val):
+        val = str(val)
+        if val.lower() in ("on","yes","true","1","enable","enabled"): return True
+        if val.lower() in ("off","no","false","0","disable","disabled"): return False
+        return None
+    if args.suppress_warnings:
+        yn = get_yes_no(args.suppress_warnings)
+        if yn is not None:
+            o.settings["suppress_warnings"] = yn
+    if args.case_sensitive:
+        yn = get_yes_no(args.case_sensitive)
+        if yn is not None:
+            o.settings["prefix_case_sensitive"] = yn
     if args.update_user: o.settings["update_user"] = True
     if args.update_sample: o.settings["update_sample"] = True
     if args.no_timestamp: o.settings["no_timestamp"] = True
+    if args.no_prefix: o.settings["hide_with_prefix"] = None
+    if args.hide_prefix: o.settings["hide_with_prefix"] = [x for x in args.hide_prefix if x]
+    if args.verbose:
+        # Force warnings and remove any hidden prefixes
+        o.settings["suppress_warnings"] = False
+        o.settings["hide_with_prefix"] = None
     if args.backup_original:
         o.settings["no_timestamp"] = False
         o.settings["backup_original"] = True
