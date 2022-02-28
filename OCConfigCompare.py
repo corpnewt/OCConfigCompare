@@ -19,6 +19,7 @@ class OCCC:
         if os.name == "nt":
             self.w = 120
             self.h = 30
+            os.system("color") # Allow ansi commands
         self.current_config = None
         self.current_plist  = None
         self.sample_plist   = None
@@ -360,7 +361,6 @@ class OCCC:
         except: pass
 
     def main(self):
-        print("main")
         if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
         self.u.head()
         print("")
@@ -477,9 +477,9 @@ if __name__ == '__main__':
 
     o = OCCC()
     def get_yes_no(val):
-        val = str(val)
-        if val.lower() in ("on","yes","true","1","enable","enabled"): return True
-        if val.lower() in ("off","no","false","0","disable","disabled"): return False
+        val = str(val).lower()
+        if val in ("y","on","yes","true","1","enable","enabled"): return True
+        if val in ("n","off","no","false","0","disable","disabled"): return False
         return None
     if args.suppress_warnings:
         yn = get_yes_no(args.suppress_warnings)
