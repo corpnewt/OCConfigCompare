@@ -404,7 +404,7 @@ class OCCC:
         elif m == "7":
             self.compare()
 
-    def cli(self, user_plist = None, sample_plist = None):
+    def cli(self, user_plist = None, sample_plist = None, use_release = False):
         # Let's normalize the plist paths - and use the latest sample.plist if no sample passed
         if not user_plist:
             print("User plist path is required!")
@@ -439,7 +439,7 @@ class OCCC:
             self.sample_config = sample_plist
         else:
             # Let's get the latest commit
-            p = self.get_latest(use_release=False,wait=False,hide=True)
+            p = self.get_latest(use_release=use_release,wait=False,hide=True)
             if not p:
                 print("Could not get the latest sample!")
                 exit(1)
@@ -450,6 +450,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-u","--user-plist",help="Path to the local user plist.")
     parser.add_argument("-s","--sample-plist",help="Path to the sample plist - will get the latest commit from OC if none passed.")
+    parser.add_argument("-r","--use-release",help="Get the latest release sample instead of the latest commit if none passed.",action="store_true")
     parser.add_argument("-w","--suppress-warnings",help="Yes/no (default: yes), sets if non-essential warnings (empty lists, etc) show when comparing - overrides settings.",nargs="?",const="1")
     parser.add_argument("-v","--verbose",help="Print more verbose output - forces '-w yes' and '-n' - overrides settings.",action="store_true")
     parser.add_argument("-x","--hide-prefix",help="Prefix to hide when comparing.",action="append")
@@ -503,7 +504,7 @@ if __name__ == '__main__':
         o.settings["backup_original"] = True
     if args.user_plist or args.sample_plist:
         # We got a required arg - start in cli mode
-        o.cli(args.user_plist,args.sample_plist)
+        o.cli(args.user_plist,args.sample_plist,use_release=args.use_release)
         exit()
 
     if 2/3 == 0:
