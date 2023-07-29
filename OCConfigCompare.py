@@ -1,5 +1,5 @@
-from Scripts import *
-import os, plistlib, json, datetime, sys, argparse, copy, datetime, shutil
+from Scripts import downloader, plist, utils
+import os, plistlib, json, datetime, sys, argparse, copy, datetime, shutil, binascii
 
 try:
     long
@@ -36,7 +36,9 @@ class OCCC:
             "update_sample"         : False,
             "no_timestamp"          : False,
             "backup_original"       : False,
-            "resize_window"         : True
+            "resize_window"         : True,
+            "compare_values"        : False,
+            "compare_in_arrays"     : False # Overrides compare_values
         }"""
         self.default_hide = ["#","PciRoot","4D1EDE05-","4D1FDA02-","7C436110-","8BE4DF61-"]
         if os.path.exists(self.settings_file):
@@ -50,8 +52,13 @@ class OCCC:
             except:
                 self.sample_plist = self.sample_config = None
 
+    def get_value(self, value):
+        if self.is_data(value):
+            return "0x"+binascii.hexlify(value).decode().upper()
+        return value
+
     def is_data(self, value):
-        return (sys.version_info >= (3, 0) and isinstance(value, bytes)) or (sys.version_info < (3,0) and isinstance(value, plistlib.Data))
+        return (sys.version_info >= (3,0) and isinstance(value, bytes)) or (sys.version_info < (3,0) and isinstance(value, plistlib.Data))
 
     def get_type(self, value):
         if isinstance(value, dict):
@@ -100,11 +107,27 @@ class OCCC:
         p_string = ""
         p_string += "\nChecking for values missing from User plist:\n\n"
         user_copy = copy.deepcopy(self.current_plist) if self.settings.get("update_user",False) else None
-        user_missing = self.compare_value(self.sample_plist,self.current_plist,path=os.path.basename(self.current_config),to_copy=user_copy!=None,compare_copy=user_copy)
+        user_missing = self.compare_value(
+            self.sample_plist,
+            self.current_plist,
+            path=os.path.basename(self.current_config),
+            to_copy=user_copy!=None,
+            compare_copy=user_copy,
+            compare_values=self.settings.get("compare_values",self.settings.get("compare_in_arrays",False)),
+            compare_in_arrays=self.settings.get("compare_in_arrays",False)
+        )
         p_string += "\n".join(user_missing) if len(user_missing) else " - Nothing missing from User config!"
         p_string += "\n\nChecking for values missing from Sample:\n\n"
         sample_copy = copy.deepcopy(self.sample_plist) if self.settings.get("update_sample",False) else None
-        sample_missing = self.compare_value(self.current_plist,self.sample_plist,path=os.path.basename(self.sample_config),to_copy=sample_copy!=None,compare_copy=sample_copy)
+        sample_missing = self.compare_value(
+            self.current_plist,
+            self.sample_plist,
+            path=os.path.basename(self.sample_config),
+            to_copy=sample_copy!=None,
+            compare_copy=sample_copy,
+            compare_values=False, # Only do this to show changes from defaults in the user plist
+            compare_in_arrays=False
+        )
         p_string += "\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!"
         p_string += "\n"
         for l,c,p in ((user_missing,user_copy,self.current_config),(sample_missing,sample_copy,self.sample_config)):
@@ -146,7 +169,7 @@ class OCCC:
     def get_valid_keys(self, check_dict):
         return [x for x in check_dict if not self.starts_with(x,prefixes=None)]
 
-    def compare_value(self, compare_from, compare_to, to_copy = False, compare_copy = None, path=""):
+    def compare_value(self, compare_from, compare_to, to_copy = False, compare_copy = None, path="", compare_values=False, compare_in_arrays=False):
         change_list = []
         # Compare 2 collections and print anything that's in compare_from that's not in compare_to
         if type(compare_from) != type(compare_to): # Should only happen if it's top level differences
@@ -166,7 +189,22 @@ class OCCC:
                     change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,self.get_type(compare_to[x]),self.get_type(compare_from[x])))
                     continue # Move forward as all underlying values will be different too
                 if isinstance(compare_from[x],list) or isinstance(compare_from[x],self.dict_types):
-                    change_list.extend(self.compare_value(compare_from[x],compare_to[x],path=path+" -> "+x,to_copy=to_copy,compare_copy=compare_copy[x] if to_copy else None))
+                    change_list.extend(self.compare_value(
+                        compare_from[x],
+                        compare_to[x],
+                        path=path+" -> "+x,
+                        to_copy=to_copy,
+                        compare_copy=compare_copy[x] if to_copy else None,
+                        compare_values=compare_values,
+                        compare_in_arrays=compare_in_arrays
+                    ))
+                elif compare_values and compare_from[x] != compare_to[x]:
+                    # Checking all values - and our value is different
+                    change_list.append("{} - Value Difference: {} --> {}".format(
+                        path+" -> "+x,
+                        self.get_value(compare_to[x]),
+                        self.get_value(compare_from[x])
+                    ))
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to):
@@ -195,7 +233,22 @@ class OCCC:
                         compare_placeholder = compare_from[0]
                     # Compare keys, pull consistent placeholders from compare_placeholder
                     for i,check in enumerate(compare_to):
-                        change_list.extend(self.compare_value(compare_placeholder,compare_to[i],path=path+" -> Array[{}]".format(i),to_copy=to_copy,compare_copy=compare_copy[i] if to_copy else None))
+                        change_list.extend(self.compare_value(
+                            compare_placeholder,
+                            compare_to[i],
+                            path=path+" -> Array[{}]".format(i),
+                            to_copy=to_copy,
+                            compare_copy=compare_copy[i] if to_copy else None,
+                            compare_values=compare_in_arrays, # We use our compare_in_arrays value here as arrays are spammy
+                            compare_in_arrays=compare_in_arrays
+                        ))
+        elif compare_values and compare_from != compare_to:
+            # Just for checking top level non-collection values
+            change_list.append("{} - Value Difference: {} --> {}".format(
+                path+" -> "+x,
+                self.get_value(compare_to),
+                self.get_value(compare_from)
+            ))
         return change_list
 
     def get_latest(self,use_release=True,wait=True,hide=False):
@@ -317,6 +370,9 @@ class OCCC:
             print("")
             print("Key Hide Prefixes: {}".format(self.print_hide_keys()))
             print("Suppress Warnings: {}".format(self.settings.get("suppress_warnings",True)))
+            print("Compare Values:    {}".format(
+                "True (+ Arrays)" if self.settings.get("compare_in_arrays") else "True" if self.settings.get("compare_values") else "False"
+            ))
             print("")
             print("1. Hide Only Keys Starting With #")
             print("2. Hide comments (#), PciRoot, and most OC NVRAM samples")
@@ -324,6 +380,7 @@ class OCCC:
             print("4. Remove Prefix")
             print("5. Show All Keys")
             print("6. {} Warnings".format("Show" if self.settings.get("suppress_warnings",True) else "Suppress"))
+            print("7. Toggle Compare Values")
             print("")
             print("M. Main Menu")
             print("Q. Quit")
@@ -354,6 +411,14 @@ class OCCC:
                 self.settings["hide_with_prefix"] = None
             elif menu == "6":
                 self.settings["suppress_warnings"] = not self.settings.get("suppress_warnings",True)
+            elif menu == "7":
+                if self.settings.get("compare_in_arrays"): # Disable all
+                    self.settings["compare_in_arrays"] = self.settings["compare_values"] = False
+                elif self.settings.get("compare_values"): # Switch to arrays
+                    self.settings["compare_in_arrays"] = self.settings["compare_values"] = True
+                else: # Just compare values
+                    self.settings["compare_in_arrays"] = False
+                    self.settings["compare_values"] = True
             self.save_settings()
 
     def save_settings(self):
@@ -369,12 +434,15 @@ class OCCC:
         print("Key Hide Prefixes:     {}".format(self.print_hide_keys()))
         print("Prefix Case-Sensitive: {}".format(self.settings.get("prefix_case_sensitive",True)))
         print("Suppress Warnings:     {}".format(self.settings.get("suppress_warnings",True)))
+        print("Compare Values:        {}".format(
+            "True (+ Arrays)" if self.settings.get("compare_in_arrays") else "True" if self.settings.get("compare_values") else "False"
+        ))
         print("")
         print("1. Get Latest Release Sample.plist")
         print("2. Get Latest Commit Sample.plist")
         print("3. Select Local Sample.plist")
         print("4. Select Local User Config.plist")
-        print("5. Change Key Hide Prefixes/Warnings")
+        print("5. Change Key Hide Prefixes/Warnings/Compare Values")
         print("6. Toggle Prefix Case-Sensitivity")
         print("7. Compare (will use latest Sample.plist if none selected)")
         print("")
@@ -456,6 +524,8 @@ if __name__ == '__main__':
     parser.add_argument("-x","--hide-prefix",help="Prefix to hide when comparing.",action="append")
     parser.add_argument("-n","--no-prefix",help="Clears all hide prefixes - overrides '-x' and settings.",action="store_true")
     parser.add_argument("-c","--case-sensitive",help="Yes/no (default: yes), sets hide prefix case-sensitivity - overrides settings.",nargs="?",const="1")
+    parser.add_argument("-m","--compare-values",help="Check for value differences as well.  Does not compare values within arrays - overrides settings.",action="store_true")
+    parser.add_argument("-a","--compare-in-arrays",help="When comparing value differences, also checks within arrays - forces '-m' - overrides settings.",action="store_true")
     parser.add_argument("-d","--dev-help",help="Show the help menu with developer options visible.",action="store_true")
     parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
@@ -490,6 +560,11 @@ if __name__ == '__main__':
         yn = get_yes_no(args.case_sensitive)
         if yn is not None:
             o.settings["prefix_case_sensitive"] = yn
+    if args.compare_in_arrays:
+        o.settings["compare_values"] = True
+        o.settings["compare_in_arrays"] = True
+    elif args.compare_values:
+        o.settings["compare_values"] = True
     if args.update_user: o.settings["update_user"] = True
     if args.update_sample: o.settings["update_sample"] = True
     if args.no_timestamp: o.settings["no_timestamp"] = True
