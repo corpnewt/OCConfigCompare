@@ -524,8 +524,7 @@ if __name__ == '__main__':
     parser.add_argument("-x","--hide-prefix",help="Prefix to hide when comparing.",action="append")
     parser.add_argument("-n","--no-prefix",help="Clears all hide prefixes - overrides '-x' and settings.",action="store_true")
     parser.add_argument("-c","--case-sensitive",help="Yes/no (default: yes), sets hide prefix case-sensitivity - overrides settings.",nargs="?",const="1")
-    parser.add_argument("-m","--compare-values",help="Check for value differences as well.  Does not compare values within arrays - overrides settings.",action="store_true")
-    parser.add_argument("-a","--compare-in-arrays",help="When comparing value differences, also checks within arrays - forces '-m' - overrides settings.",action="store_true")
+    parser.add_argument("-m","--compare-values",help="Yes/no/array (default: no), check for value differences as well - overrides settings.",nargs="?",const="1")
     parser.add_argument("-d","--dev-help",help="Show the help menu with developer options visible.",action="store_true")
     parser.add_argument("-p","--update-user",help=argparse.SUPPRESS,action="store_true")
     parser.add_argument("-l","--update-sample",help=argparse.SUPPRESS,action="store_true")
@@ -560,11 +559,15 @@ if __name__ == '__main__':
         yn = get_yes_no(args.case_sensitive)
         if yn is not None:
             o.settings["prefix_case_sensitive"] = yn
-    if args.compare_in_arrays:
-        o.settings["compare_values"] = True
-        o.settings["compare_in_arrays"] = True
-    elif args.compare_values:
-        o.settings["compare_values"] = True
+    if args.compare_values:
+        print(args.compare_values)
+        if args.compare_values.lower() in ("a","array","arrays"):
+            o.settings["compare_values"] = o.settings["compare_in_arrays"] = True
+        else:
+            yn = get_yes_no(args.compare_values)
+            if yn is not None:
+                o.settings["compare_in_arrays"] = False
+                o.settings["compare_values"] = yn
     if args.update_user: o.settings["update_user"] = True
     if args.update_sample: o.settings["update_sample"] = True
     if args.no_timestamp: o.settings["no_timestamp"] = True
