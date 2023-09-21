@@ -209,7 +209,7 @@ class OCCC:
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to):
                 if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> {}-Array - Empty: Skipped".format("From|To" if not len(compare_from) and not len(compare_to) else "From" if not len(compare_from) else "To"))
-            elif not all((isinstance(x,self.dict_types) for x in compare_from)):
+            elif not compare_in_arrays and not all((isinstance(x,self.dict_types) for x in compare_from)):
                 if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - Non-Dictionary Children: Skipped")
             else:
                 # All children of compare_from are dicts - let's ensure consistent keys
@@ -223,16 +223,24 @@ class OCCC:
                 if not global_keys:
                     if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - All Child Keys Differ: Skipped")
                 else:
+                    # Ensure we list if the arrays are different length
+                    if compare_in_arrays and len(compare_from) != len(compare_to):
+                        change_list.append("{} - From|To-Array Lengths Differ: {:,} --> {:,}, Checking Indices 0-{:,}".format(path,len(compare_from),len(compare_to),min(len(compare_from),len(compare_to))-1))
                     if global_keys != valid_keys:
                         if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - Child Keys Differ: Checking Consistent")
-                        # Build a key placeholder to check using only consistent keys
-                        compare_placeholder = {}
-                        for key in global_keys: compare_placeholder[key] = compare_from[0][key]
-                    else:
-                        # Fall back on compare_from[0]
-                        compare_placeholder = compare_from[0]
                     # Compare keys, pull consistent placeholders from compare_placeholder
                     for i,check in enumerate(compare_to):
+                        if i >= len(compare_from):
+                            # Out of range
+                            break
+                        if global_keys != valid_keys:
+                            # Build a key placeholder to check using only consistent keys
+                            compare_placeholder = {}
+                            for key in global_keys:
+                                compare_placeholder[key] = compare_from[i][key]
+                        else:
+                            # Just use the next in line
+                            compare_placeholder = compare_from[i]
                         change_list.extend(self.compare_value(
                             compare_placeholder,
                             compare_to[i],
