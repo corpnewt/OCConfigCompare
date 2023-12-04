@@ -568,7 +568,6 @@ if __name__ == '__main__':
         if yn is not None:
             o.settings["prefix_case_sensitive"] = yn
     if args.compare_values:
-        print(args.compare_values)
         if args.compare_values.lower() in ("a","array","arrays"):
             o.settings["compare_values"] = o.settings["compare_in_arrays"] = True
         else:
