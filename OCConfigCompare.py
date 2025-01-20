@@ -276,7 +276,7 @@ class OCCC:
         print(dl_url)
         print("")
         p = None
-        dl_config = self.d.stream_to_file(dl_url,self.sample_path)
+        dl_config = self.d.stream_to_file(dl_url,self.sample_path,allow_resume=False)
         if not dl_config:
             print("\nFailed to download!\n")
             if wait: self.u.grab("Press [enter] to return...")
