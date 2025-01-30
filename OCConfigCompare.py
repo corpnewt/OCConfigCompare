@@ -1,6 +1,6 @@
 from Scripts import downloader, plist, utils
 from collections import deque
-import os, plistlib, json, datetime, sys, argparse, copy, datetime, shutil, binascii
+import os, plistlib, json, datetime, sys, argparse, copy, datetime, shutil, binascii, re
 
 try:
     long
@@ -94,6 +94,11 @@ class OCCC:
             name += ".plist" # Add it to the end again
         return name
 
+    def sorted_nicely(self, l, reverse = False):
+        convert = lambda text: int(text) if text.isdigit() else text
+        alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key.lower())]
+        return sorted(l,key=lambda x:alphanum_key(x),reverse=reverse)
+
     def compare(self,hide=False):
         # First make sure we have plist info
         c = self.get_plist("user config.plist",self.current_config,hide=hide)
@@ -114,7 +119,7 @@ class OCCC:
         p_string = ""
         p_string += "\nChecking for values missing from User plist:\n\n"
         user_copy = copy.deepcopy(self.current_plist) if self.settings.get("update_user",False) else None
-        user_missing = self.compare_value(
+        user_missing = self.sorted_nicely(self.compare_value(
             self.sample_plist,
             self.current_plist,
             path=os.path.basename(self.current_config),
@@ -122,11 +127,11 @@ class OCCC:
             compare_copy=user_copy,
             compare_values=self.settings.get("compare_values",self.settings.get("compare_in_arrays",False)),
             compare_in_arrays=self.settings.get("compare_in_arrays",False)
-        )
+        ))
         p_string += "\n".join(user_missing) if len(user_missing) else " - Nothing missing from User config!"
         p_string += "\n\nChecking for values missing from Sample:\n\n"
         sample_copy = copy.deepcopy(self.sample_plist) if self.settings.get("update_sample",False) else None
-        sample_missing = self.compare_value(
+        sample_missing = self.sorted_nicely(self.compare_value(
             self.current_plist,
             self.sample_plist,
             path=os.path.basename(self.sample_config),
@@ -134,7 +139,7 @@ class OCCC:
             compare_copy=sample_copy,
             compare_values=False, # Only do this to show changes from defaults in the user plist
             compare_in_arrays=False
-        )
+        ))
         p_string += "\n".join(sample_missing) if len(sample_missing) else " - Nothing missing from Sample config!"
         p_string += "\n"
         for l,c,p in ((user_missing,user_copy,self.current_config),(sample_missing,sample_copy,self.sample_config)):
