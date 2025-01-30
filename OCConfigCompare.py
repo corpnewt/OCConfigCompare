@@ -1,4 +1,5 @@
 from Scripts import downloader, plist, utils
+from collections import deque
 import os, plistlib, json, datetime, sys, argparse, copy, datetime, shutil, binascii
 
 try:
@@ -12,8 +13,10 @@ class OCCC:
     def __init__(self):
         self.d = downloader.Downloader()
         self.u = utils.Utils("OC Config Compare")
-        if 2/3 == 0: self.dict_types = (dict,plistlib._InternalDict)
-        else: self.dict_types = (dict)
+        if 2/3 == 0:
+            self.dict_types = (dict,plistlib._InternalDict)
+        else:
+            self.dict_types = (dict)
         self.w = 80
         self.h = 24
         if os.name == "nt":
@@ -42,8 +45,10 @@ class OCCC:
         }"""
         self.default_hide = ["#","PciRoot","4D1EDE05-","4D1FDA02-","7C436110-","8BE4DF61-"]
         if os.path.exists(self.settings_file):
-            try: self.settings = json.load(open(self.settings_file))
-            except: pass
+            try:
+                self.settings = json.load(open(self.settings_file))
+            except:
+                pass
         self.sample_config  = self.sample_path if os.path.exists(self.sample_path) else None
         if self.sample_config:
             try:
@@ -82,9 +87,11 @@ class OCCC:
 
     def get_timestamp(self,name="config.plist",backup=False):
         needs_plist = name.lower().endswith(".plist")
-        if needs_plist: name = name[:-6] # Strip the .plist extension
+        if needs_plist:
+            name = name[:-6] # Strip the .plist extension
         name = "{}-{}{}".format(name,"backup-" if backup else "",datetime.datetime.today().strftime("%Y-%m-%d-%H.%M"))
-        if needs_plist: name += ".plist" # Add it to the end again
+        if needs_plist:
+            name += ".plist" # Add it to the end again
         return name
 
     def compare(self,hide=False):
@@ -150,27 +157,60 @@ class OCCC:
         w = max([len(x) for x in p_string.split("\n")])+1
         h = 5 + len(p_string.split("\n"))
         if not hide:
-            if self.settings.get("resize_window",True): self.u.resize(w if w > self.w else self.w, h if h > self.h else self.h)
+            if self.settings.get("resize_window",True):
+                self.u.resize(w if w > self.w else self.w, h if h > self.h else self.h)
             self.u.head()
         print(p_string)
-        if not hide: self.u.grab("Press [enter] to return...")
+        if not hide:
+            self.u.grab("Press [enter] to return...")
 
     def starts_with(self, value, prefixes=None):
-        if prefixes is None: prefixes = self.settings.get("hide_with_prefix",self.default_hide)
-        if prefixes is None: return False # Nothing passed, and nothing in settings - everything is allowed
+        if prefixes is None:
+            prefixes = self.settings.get("hide_with_prefix",self.default_hide)
+        if prefixes is None:
+            return False # Nothing passed, and nothing in settings - everything is allowed
         case_sensitive = self.settings.get("prefix_case_sensitive",True)
         if not case_sensitive: # Normalize case
             prefixes = [x.lower() for x in prefixes] if isinstance(prefixes,(list,tuple)) else prefixes.lower()
             value = value.lower()
-        if isinstance(prefixes,list): prefixes = tuple(prefixes) # Convert to tuple if need be
-        if not isinstance(prefixes,tuple): prefixes = (prefixes,) # Wrap up in tuple as needed
+        if isinstance(prefixes,list):
+            prefixes = tuple(prefixes) # Convert to tuple if need be
+        if not isinstance(prefixes,tuple):
+            prefixes = (prefixes,) # Wrap up in tuple as needed
         return value.startswith(prefixes)
 
     def get_valid_keys(self, check_dict):
         return [x for x in check_dict if not self.starts_with(x,prefixes=None)]
 
-    def compare_value(self, compare_from, compare_to, to_copy = False, compare_copy = None, path="", compare_values=False, compare_in_arrays=False):
-        change_list = []
+    def compare_value(self, compare_from, compare_to, to_copy=False, compare_copy=None, path="", compare_values=False, compare_in_arrays=False):
+        # Set up a depth-first iterative loop to avoid max recursion
+        compare_stack = deque()
+        compare_stack.append((
+            compare_from,
+            compare_to,
+            to_copy,
+            compare_copy,
+            path,
+            compare_values,
+            compare_in_arrays
+        ))
+        change_list = deque()
+        while compare_stack:
+            compare = compare_stack.popleft()
+            # Compare
+            children,changes = self._compare_value(*compare)
+            if changes:
+                # We got some changes - add them to our list
+                change_list.extend(changes)
+            if children:
+                # We got child elements - let's add them to the
+                # stack
+                compare_stack.extend(children)
+        return change_list
+
+    def _compare_value(self, compare_from, compare_to, to_copy=False, compare_copy=None, path="", compare_values=False, compare_in_arrays=False):
+        change_list = deque()
+        children    = deque()
         # Compare 2 collections and print anything that's in compare_from that's not in compare_to
         if type(compare_from) != type(compare_to): # Should only happen if it's top level differences
             change_list.append("{} - Type Difference: {} --> {}".format(path,self.get_type(compare_to),self.get_type(compare_from)))
@@ -178,25 +218,29 @@ class OCCC:
             # Let's compare keys
             not_keys = self.get_valid_keys([x for x in list(compare_from) if not x in list(compare_to)])
             for x in not_keys:
-                if to_copy: compare_copy[x] = compare_from[x]
+                if to_copy:
+                    compare_copy[x] = compare_from[x]
                 change_list.append("{} - Missing Key: {}".format(path,x))
             # Let's verify all other values if needed
             for x in list(compare_from):
-                if x in not_keys: continue # Skip these as they're already not in the _to
-                if self.starts_with(x): continue # Skipping this due to prefix
+                if x in not_keys:
+                    continue # Skip these as they're already not in the _to
+                if self.starts_with(x):
+                    continue # Skipping this due to prefix
                 if type(compare_from[x]) != type(compare_to[x]):
-                    if to_copy: compare_copy[x] = compare_from[x]
+                    if to_copy:
+                        compare_copy[x] = compare_from[x]
                     change_list.append("{} - Type Difference: {} --> {}".format(path+" -> "+x,self.get_type(compare_to[x]),self.get_type(compare_from[x])))
                     continue # Move forward as all underlying values will be different too
                 if isinstance(compare_from[x],list) or isinstance(compare_from[x],self.dict_types):
-                    change_list.extend(self.compare_value(
+                    children.append((
                         compare_from[x],
                         compare_to[x],
-                        path=path+" -> "+x,
-                        to_copy=to_copy,
-                        compare_copy=compare_copy[x] if to_copy else None,
-                        compare_values=compare_values,
-                        compare_in_arrays=compare_in_arrays
+                        to_copy,
+                        compare_copy[x] if to_copy else None,
+                        path+" -> "+x,
+                        compare_values,
+                        compare_in_arrays
                     ))
                 elif compare_values and compare_from[x] != compare_to[x]:
                     # Checking all values - and our value is different
@@ -208,60 +252,89 @@ class OCCC:
         elif isinstance(compare_from,list):
             # This will be tougher, but we should only check for dict children and compare keys
             if not len(compare_from) or not len(compare_to):
-                if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> {}-Array - Empty: Skipped".format("From|To" if not len(compare_from) and not len(compare_to) else "From" if not len(compare_from) else "To"))
+                if not self.settings.get("suppress_warnings",True):
+                    change_list.append(path+" -> {}-Array - Empty: Skipped".format("From|To" if not len(compare_from) and not len(compare_to) else "From" if not len(compare_from) else "To"))
             elif not compare_in_arrays and not all((isinstance(x,self.dict_types) for x in compare_from)):
-                if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - Non-Dictionary Children: Skipped")
+                if not self.settings.get("suppress_warnings",True):
+                    change_list.append(path+" -> From-Array - Non-Dictionary Children: Skipped")
             else:
-                # All children of compare_from are dicts - let's ensure consistent keys
-                valid_keys = []
-                for x in compare_from: valid_keys.extend(self.get_valid_keys(x))
-                valid_keys = set(valid_keys)
-                global_keys = []
-                for key in valid_keys:
-                    if all((key in x for x in compare_from)): global_keys.append(key)
-                global_keys = set(global_keys)
-                if not global_keys:
-                    if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - All Child Keys Differ: Skipped")
-                else:
-                    # Ensure we list if the arrays are different length
-                    if compare_in_arrays and len(compare_from) != len(compare_to):
-                        change_list.append("{} - From|To-Array Lengths Differ: {:,} --> {:,}, Checking Indices 0-{:,}".format(path,len(compare_from),len(compare_to),min(len(compare_from),len(compare_to))-1))
-                    if global_keys != valid_keys:
-                        if not self.settings.get("suppress_warnings",True): change_list.append(path+" -> From-Array - Child Keys Differ: Checking Consistent")
-                    # Compare keys, pull consistent placeholders from compare_placeholder
-                    for i,check in enumerate(compare_to):
-                        if i >= len(compare_from):
-                            # Out of range
-                            break
-                        if global_keys != valid_keys:
-                            # Build a key placeholder to check using only consistent keys
-                            compare_placeholder = {}
-                            for key in global_keys:
-                                compare_placeholder[key] = compare_from[i][key]
-                        else:
-                            # Just use the next in line
-                            compare_placeholder = compare_from[i]
-                        change_list.extend(self.compare_value(
-                            compare_placeholder,
+                # Ensure we list if the arrays are different length
+                min_count = min(len(compare_from),len(compare_to))
+                if compare_in_arrays and len(compare_from) != len(compare_to):
+                    change_list.append(
+                        "{} - From|To-Array Lengths Differ: {:,} --> {:,}, Checking Indices 0-{:,}".format(
+                            path,
+                            len(compare_from),
+                            len(compare_to),
+                            min_count-1
+                        )
+                    )
+                # Check if they're all dicts
+                if compare_in_arrays and not all((isinstance(x,self.dict_types) for x in compare_from)):
+                    # We're checking in arrays and the child elements aren't all dicts
+                    for i in range(min_count):
+                        children.append((
+                            compare_from[i],
                             compare_to[i],
-                            path=path+" -> Array[{}]".format(i),
-                            to_copy=to_copy,
-                            compare_copy=compare_copy[i] if to_copy else None,
-                            compare_values=compare_in_arrays, # We use our compare_in_arrays value here as arrays are spammy
-                            compare_in_arrays=compare_in_arrays
+                            to_copy,
+                            compare_copy[i] if to_copy else None,
+                            path+" -> Array[{}]".format(i),
+                            compare_in_arrays, # We use our compare_in_arrays value here as arrays are spammy
+                            compare_in_arrays
                         ))
+                else:
+                    # All children of compare_from are dicts - let's ensure consistent keys
+                    valid_keys = []
+                    for x in compare_from:
+                        valid_keys.extend(self.get_valid_keys(x))
+                    valid_keys = set(valid_keys)
+                    global_keys = []
+                    for key in valid_keys:
+                        if all((key in x for x in compare_from)):
+                            global_keys.append(key)
+                    global_keys = set(global_keys)
+                    if not global_keys:
+                        if not self.settings.get("suppress_warnings",True):
+                            change_list.append(path+" -> From-Array - All Child Keys Differ: Skipped")
+                    else:
+                        if global_keys != valid_keys:
+                            if not self.settings.get("suppress_warnings",True):
+                                change_list.append(path+" -> From-Array - Child Keys Differ: Checking Consistent")
+                        # Compare keys, pull consistent placeholders from compare_placeholder
+                        for i,check in enumerate(compare_to):
+                            if i >= len(compare_from):
+                                # Out of range
+                                break
+                            if global_keys != valid_keys:
+                                # Build a key placeholder to check using only consistent keys
+                                compare_placeholder = {}
+                                for key in global_keys:
+                                    compare_placeholder[key] = compare_from[i][key]
+                            else:
+                                # Just use the next in line
+                                compare_placeholder = compare_from[i]
+                            children.append((
+                                compare_placeholder,
+                                compare_to[i],
+                                to_copy,
+                                compare_copy[i] if to_copy else None,
+                                path+" -> Array[{}]".format(i),
+                                compare_in_arrays, # We use our compare_in_arrays value here as arrays are spammy
+                                compare_in_arrays
+                            ))
         elif compare_values and compare_from != compare_to:
             # Just for checking top level non-collection values
             change_list.append("{} - Value Difference: {} --> {}".format(
-                path+" -> "+x,
+                path,
                 self.get_value(compare_to),
                 self.get_value(compare_from)
             ))
-        return change_list
+        return (children,change_list)
 
     def get_latest(self,use_release=True,wait=True,hide=False):
         if not hide:
-            if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
+            if self.settings.get("resize_window",True):
+                self.u.resize(self.w,self.h)
             self.u.head()
             print("")
         if use_release:
@@ -269,8 +342,10 @@ class OCCC:
             try:
                 urlsource = json.loads(self.d.get_string(self.opencorpgk_url,False))
                 repl = urlsource[0]["tag_name"]
-            except: repl = "master" # fall back on the latest commit if failed
-        else: repl = "master"
+            except:
+                repl = "master" # fall back on the latest commit if failed
+        else:
+            repl = "master"
         dl_url = self.sample_url.format(repl)
         print("Gathering latest Sample.plist from:")
         print(dl_url)
@@ -279,7 +354,8 @@ class OCCC:
         dl_config = self.d.stream_to_file(dl_url,self.sample_path)
         if not dl_config:
             print("\nFailed to download!\n")
-            if wait: self.u.grab("Press [enter] to return...")
+            if wait:
+                self.u.grab("Press [enter] to return...")
             return None
         print("Loading...")
         try:
@@ -287,14 +363,17 @@ class OCCC:
                 p = plist.load(f)
         except Exception as e:
             print("\nPlist failed to load:  {}\n".format(e))
-            if wait: self.u.grab("Press [enter] to return...")
+            if wait:
+                self.u.grab("Press [enter] to return...")
             return None
         print("")
-        if wait: self.u.grab("Press [enter] to return...")
+        if wait:
+            self.u.grab("Press [enter] to return...")
         return (dl_config,p)
 
     def get_plist(self,plist_name="config.plist",plist_path=None,hide=False):
-        if not hide and self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
+        if not hide and self.settings.get("resize_window",True):
+            self.u.resize(self.w,self.h)
         while True:
             if plist_path != None:
                 m = plist_path
@@ -328,7 +407,8 @@ class OCCC:
 
     def print_hide_keys(self):
         hide_keys = self.settings.get("hide_with_prefix",self.default_hide)
-        if isinstance(hide_keys,(list,tuple)): return ", ".join(hide_keys)
+        if isinstance(hide_keys,(list,tuple)):
+            return ", ".join(hide_keys)
         return hide_keys
 
     def custom_hide_prefix(self):
@@ -359,11 +439,16 @@ class OCCC:
             print("Q. Quit")
             print("")
             pref = self.u.grab("Please enter the number of the prefix to remove:  ").lower()
-            if not len(pref): continue
-            if pref == "m": return None if prefixes == None or not len(prefixes) else prefixes
-            if pref == "q": self.u.custom_quit()
-            if pref == "a": return None
-            if prefixes == None: continue # Nothing to remove and not a menu option
+            if not len(pref):
+                continue
+            if pref == "m":
+                return None if prefixes == None or not len(prefixes) else prefixes
+            if pref == "q":
+                self.u.custom_quit()
+            if pref == "a":
+                return None
+            if prefixes == None:
+                continue # Nothing to remove and not a menu option
             else: # Hope for a number
                 try:
                     pref = int(pref)-1
@@ -394,23 +479,29 @@ class OCCC:
             print("Q. Quit")
             print("")
             menu = self.u.grab("Please select an option:  ")
-            if menu.lower() == "m": return
-            elif menu.lower() == "q": self.u.custom_quit()
+            if menu.lower() == "m":
+                return
+            elif menu.lower() == "q":
+                self.u.custom_quit()
             elif menu == "1":
                 self.settings["hide_with_prefix"] = "#"
             elif menu == "2":
                 self.settings["hide_with_prefix"] = ["#","PciRoot","4D1EDE05-","4D1FDA02-","7C436110-","8BE4DF61-"]
             elif menu == "3":
                 new_prefix = self.custom_hide_prefix()
-                if not new_prefix: continue # Nothing to add
+                if not new_prefix:
+                    continue # Nothing to add
                 prefixes = self.settings.get("hide_with_prefix",self.default_hide)
-                if prefixes == None: prefixes = new_prefix # None set yet
+                if prefixes == None:
+                    prefixes = new_prefix # None set yet
                 elif isinstance(prefixes,(list,tuple)): # It's a list or tuple
-                    if new_prefix in prefixes: continue # Already in the list
+                    if new_prefix in prefixes:
+                        continue # Already in the list
                     prefixes = list(prefixes)
                     prefixes.append(new_prefix)
                 else:
-                    if prefixes == new_prefix: continue # Already set to that
+                    if prefixes == new_prefix:
+                        continue # Already set to that
                     prefixes = [prefixes,new_prefix] # Is a string, probably
                 self.settings["hide_with_prefix"] = prefixes
             elif menu == "4":
@@ -430,11 +521,14 @@ class OCCC:
             self.save_settings()
 
     def save_settings(self):
-        try: json.dump(self.settings,open(self.settings_file,"w"),indent=2)
-        except: pass
+        try:
+            json.dump(self.settings,open(self.settings_file,"w"),indent=2)
+        except:
+            pass
 
     def main(self):
-        if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
+        if self.settings.get("resize_window",True):
+            self.u.resize(self.w,self.h)
         self.u.head()
         print("")
         print("Current Config:        {}".format(self.current_config))
@@ -458,7 +552,8 @@ class OCCC:
         print("")
         m = self.u.grab("Please select an option:  ").lower()
         if m == "q":
-            if self.settings.get("resize_window",True): self.u.resize(self.w,self.h)
+            if self.settings.get("resize_window",True):
+                self.u.resize(self.w,self.h)
             self.u.custom_quit()
         elif m in ("1","2"):
             p = self.get_latest(use_release=m=="1")
@@ -548,7 +643,8 @@ if __name__ == '__main__':
             "backup_original":"Backup the user or sample plist with a timestamp before replacing it directly (requires -p or -l, overrides -t)"
         }
         for action in parser._actions:
-            if not action.dest in update: continue
+            if not action.dest in update:
+                continue
             action.help = update[action.dest]
         parser.print_help()
         exit()
@@ -556,8 +652,10 @@ if __name__ == '__main__':
     o = OCCC()
     def get_yes_no(val):
         val = str(val).lower()
-        if val in ("y","on","yes","true","1","enable","enabled"): return True
-        if val in ("n","off","no","false","0","disable","disabled"): return False
+        if val in ("y","on","yes","true","1","enable","enabled"):
+            return True
+        if val in ("n","off","no","false","0","disable","disabled"):
+            return False
         return None
     if args.suppress_warnings:
         yn = get_yes_no(args.suppress_warnings)
@@ -575,11 +673,16 @@ if __name__ == '__main__':
             if yn is not None:
                 o.settings["compare_in_arrays"] = False
                 o.settings["compare_values"] = yn
-    if args.update_user: o.settings["update_user"] = True
-    if args.update_sample: o.settings["update_sample"] = True
-    if args.no_timestamp: o.settings["no_timestamp"] = True
-    if args.no_prefix: o.settings["hide_with_prefix"] = None
-    if args.hide_prefix: o.settings["hide_with_prefix"] = [x for x in args.hide_prefix if x]
+    if args.update_user:
+        o.settings["update_user"] = True
+    if args.update_sample:
+        o.settings["update_sample"] = True
+    if args.no_timestamp:
+        o.settings["no_timestamp"] = True
+    if args.no_prefix:
+        o.settings["hide_with_prefix"] = None
+    if args.hide_prefix:
+        o.settings["hide_with_prefix"] = [x for x in args.hide_prefix if x]
     if args.verbose:
         # Force warnings and remove any hidden prefixes
         o.settings["suppress_warnings"] = False
